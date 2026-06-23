@@ -53,12 +53,14 @@ async fn grab_banner(mut stream: TcpStream, wait: Duration) -> Option<String> {
     }
 }
 
-/// Render banner bytes as a single safe ASCII line.
+/// Render banner bytes as a single safe ASCII line: drop leading/trailing
+/// whitespace and control bytes (e.g. the CRLF many banners end with), then map
+/// any interior non-graphic byte to '.'.
 fn sanitise(bytes: &[u8]) -> String {
-    bytes
+    let start = bytes.iter().position(u8::is_ascii_graphic).unwrap_or(0);
+    let end = bytes.iter().rposition(u8::is_ascii_graphic).map_or(start, |i| i + 1);
+    bytes[start..end]
         .iter()
         .map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '.' })
-        .collect::<String>()
-        .trim()
-        .to_string()
+        .collect()
 }

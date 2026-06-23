@@ -1,0 +1,77 @@
+//! End-to-end tests of the asset/observation store through the public API
+//! (F-003, F-004, D-007). These exercise the same surface the CLI and GUI use,
+//! and need no privilege or network.
+
+use pontus_core::{IdentitySignals, ObservationState, Store};
+
+fn sig(mac: Option<&str>, ip: &str) -> IdentitySignals {
+    IdentitySignals {
+        mac: mac.map(str::to_string),
+        ip: Some(ip.parse().unwrap()),
+        ..Default::default()
+    }
+}
+
+fn up() -> ObservationState {
+    ObservationState { up: true, ..Default::default() }
+}
+
+#[test]
+fn two_scans_of_a_host_make_one_asset_and_two_observations() {
+    let store = Store::open_in_memory().unwrap();
+
+    let s1 = store.begin_scan("192.168.1.0/24", "192.168.1.0/24", Some("op")).unwrap();
+    let a1 = store.record(&sig(Some("aa:bb:cc:dd:ee:ff"), "192.168.1.10"), s1, &up()).unwrap();
+    store.finish_scan(s1).unwrap();
+
+    let s2 = store.begin_scan("192.168.1.0/24", "192.168.1.0/24", Some("op")).unwrap();
+    let a2 = store.record(&sig(Some("aa:bb:cc:dd:ee:ff"), "192.168.1.10"), s2, &up()).unwrap();
+    store.finish_scan(s2).unwrap();
+
+    assert_eq!(a1, a2);
+    assert_eq!(store.asset_count().unwrap(), 1);
+    assert_eq!(store.observation_count().unwrap(), 2);
+}
+
+#[test]
+fn forced_ip_change_resolves_to_the_same_asset() {
+    let store = Store::open_in_memory().unwrap();
+    let mac = Some("de:ad:be:ef:00:01");
+
+    let s1 = store.begin_scan("n", "s", None).unwrap();
+    let a1 = store.record(&sig(mac, "192.168.1.10"), s1, &up()).unwrap();
+
+    let s2 = store.begin_scan("n", "s", None).unwrap();
+    let a2 = store.record(&sig(mac, "192.168.1.250"), s2, &up()).unwrap();
+
+    assert_eq!(a1, a2, "same MAC on a new IP must be the same asset (F-004)");
+    assert_eq!(store.asset_count().unwrap(), 1);
+}
+
+#[test]
+fn observations_cannot_be_mutated_through_the_store_connection() {
+    let store = Store::open_in_memory().unwrap();
+    let s = store.begin_scan("n", "s", None).unwrap();
+    store.record(&sig(Some("aa:aa:aa:aa:aa:aa"), "10.0.0.1"), s, &up()).unwrap();
+
+    assert!(
+        store.conn().execute("UPDATE observations SET ip = '0.0.0.0'", []).is_err(),
+        "append-only trigger must reject UPDATE (D-007)"
+    );
+    assert!(
+        store.conn().execute("DELETE FROM observations", []).is_err(),
+        "append-only trigger must reject DELETE (D-007)"
+    );
+    assert_eq!(store.observation_count().unwrap(), 1);
+}
+
+#[test]
+fn audit_record_persists_targets_scope_and_operator() {
+    let store = Store::open_in_memory().unwrap();
+    let s = store.begin_scan("192.168.1.0/24", "192.168.1.0/24", Some("shane")).unwrap();
+    store.finish_scan(s).unwrap();
+
+    let scan = store.scan(s).unwrap().expect("scan exists");
+    assert_eq!(scan.targets, "192.168.1.0/24");
+    assert!(scan.finished_at.is_some(), "finish_scan stamps a completion time");
+}
