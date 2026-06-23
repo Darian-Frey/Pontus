@@ -9,7 +9,7 @@ use crate::error::Result;
 use crate::identity;
 use crate::model::{IdentitySignals, ObservationState};
 use chrono::Utc;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 
 const SCHEMA: &str = r#"
@@ -59,6 +59,26 @@ CREATE TRIGGER IF NOT EXISTS observations_no_delete
     BEFORE DELETE ON observations
     BEGIN SELECT RAISE(ABORT, 'observations are append-only'); END;
 "#;
+
+/// A scan's audit record, for listing and diff headers.
+#[derive(Debug, Clone)]
+pub struct ScanRef {
+    pub id: i64,
+    pub started_at: String,
+    pub finished_at: Option<String>,
+    pub targets: String,
+}
+
+/// One host's observation within a scan, joined to its asset identity. The unit a
+/// diff compares (F-014).
+#[derive(Debug, Clone)]
+pub struct HostObservation {
+    pub asset_id: i64,
+    pub identity_kind: String,
+    pub identity_value: String,
+    pub ip: String,
+    pub state: ObservationState,
+}
 
 /// A row of the asset table, flattened for display (the CLI `assets` command).
 #[derive(Debug, Clone)]
@@ -158,6 +178,67 @@ impl Store {
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// The most recent scans, newest first (for picking the two to diff).
+    pub fn recent_scans(&self, limit: i64) -> Result<Vec<ScanRef>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, started_at, finished_at, targets FROM scans ORDER BY id DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map([limit], |r| {
+            Ok(ScanRef {
+                id: r.get(0)?,
+                started_at: r.get(1)?,
+                finished_at: r.get(2)?,
+                targets: r.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// A single scan's audit record, if it exists.
+    pub fn scan(&self, id: i64) -> Result<Option<ScanRef>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT id, started_at, finished_at, targets FROM scans WHERE id = ?1",
+                [id],
+                |r| {
+                    Ok(ScanRef {
+                        id: r.get(0)?,
+                        started_at: r.get(1)?,
+                        finished_at: r.get(2)?,
+                        targets: r.get(3)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    /// Every host observation recorded by one scan, joined to its asset identity.
+    pub fn observations_for_scan(&self, scan_id: i64) -> Result<Vec<HostObservation>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT o.asset_id, a.identity_kind, a.identity_value, o.ip, o.state
+             FROM observations o JOIN assets a ON a.id = o.asset_id
+             WHERE o.scan_id = ?1
+             ORDER BY o.asset_id",
+        )?;
+        let rows = stmt.query_map([scan_id], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, String>(4)?,
+            ))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (asset_id, identity_kind, identity_value, ip, state_json) = row?;
+            let state: ObservationState = serde_json::from_str(&state_json)?;
+            out.push(HostObservation { asset_id, identity_kind, identity_value, ip, state });
+        }
+        Ok(out)
     }
 
     /// Borrow the underlying connection (tests and future query helpers).

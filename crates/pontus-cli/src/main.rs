@@ -32,6 +32,20 @@ enum Command {
         #[arg(long, default_value = "pontus.db")]
         db: String,
     },
+    /// Diff two scans: opened/closed ports, new/vanished hosts, address moves.
+    Diff {
+        #[arg(long, default_value = "pontus.db")]
+        db: String,
+        /// Earlier scan id (defaults to the second-most-recent scan).
+        #[arg(long)]
+        from: Option<i64>,
+        /// Later scan id (defaults to the most-recent scan).
+        #[arg(long)]
+        to: Option<i64>,
+        /// Also list hosts that did not change.
+        #[arg(long)]
+        all: bool,
+    },
 }
 
 #[derive(Parser)]
@@ -70,6 +84,7 @@ async fn main() -> ExitCode {
     let result = match cli.command {
         Command::Scan(args) => run_scan(args).await,
         Command::Assets { db } => list_assets(&db),
+        Command::Diff { db, from, to, all } => run_diff(&db, from, to, all),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -196,6 +211,85 @@ fn list_assets(db: &str) -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     Ok(())
+}
+
+fn run_diff(db: &str, from: Option<i64>, to: Option<i64>, all: bool) -> Result<(), Box<dyn std::error::Error>> {
+    use pontus_core::diff::{HostStatus, diff_observations};
+
+    let store = Store::open(db)?;
+
+    // Default to the two most recent scans when ids aren't given.
+    let (from_id, to_id) = match (from, to) {
+        (Some(f), Some(t)) => (f, t),
+        _ => {
+            let recent = store.recent_scans(2)?;
+            if recent.len() < 2 {
+                return Err("need at least two scans to diff (run another scan first)".into());
+            }
+            (recent[1].id, recent[0].id) // recent[0] is newest
+        }
+    };
+
+    let from_scan = store.scan(from_id)?.ok_or_else(|| format!("no scan with id {from_id}"))?;
+    let to_scan = store.scan(to_id)?.ok_or_else(|| format!("no scan with id {to_id}"))?;
+    let diffs = diff_observations(
+        &store.observations_for_scan(from_id)?,
+        &store.observations_for_scan(to_id)?,
+    );
+
+    println!(
+        "diff: scan {} ({}) → scan {} ({})",
+        from_scan.id, from_scan.started_at, to_scan.id, to_scan.started_at
+    );
+
+    let (mut new, mut gone, mut changed, mut same) = (0u32, 0u32, 0u32, 0u32);
+    for d in &diffs {
+        let tag = match d.status {
+            HostStatus::New => {
+                new += 1;
+                "NEW"
+            }
+            HostStatus::Vanished => {
+                gone += 1;
+                "GONE"
+            }
+            HostStatus::Changed => {
+                changed += 1;
+                "CHANGED"
+            }
+            HostStatus::Unchanged => {
+                same += 1;
+                "---"
+            }
+        };
+        if d.status == HostStatus::Unchanged && !all {
+            continue;
+        }
+        let mut notes = Vec::new();
+        if let Some(prev) = &d.moved_from {
+            notes.push(format!("moved {prev} → {}", d.ip));
+        }
+        if !d.opened.is_empty() {
+            notes.push(format!("+{}", join_ports(&d.opened)));
+        }
+        if !d.closed.is_empty() {
+            notes.push(format!("-{}", join_ports(&d.closed)));
+        }
+        println!(
+            "  [{:<7}] {:<9} {:<24} {:<16} {}",
+            tag,
+            d.identity_kind,
+            d.identity_value,
+            d.ip,
+            notes.join("  "),
+        );
+    }
+    println!("summary: {new} new, {gone} vanished, {changed} changed, {same} unchanged");
+    Ok(())
+}
+
+fn join_ports(ports: &[u16]) -> String {
+    ports.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(",")
 }
 
 fn mac_label(host: &DiscoveredHost) -> String {
