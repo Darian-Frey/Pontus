@@ -91,16 +91,19 @@ async fn probe_inner(ip: IpAddr, port: u16, wait: Duration, retries: u8) -> io::
     let sock = UdpSocket::bind(bind).await?;
     sock.connect(SocketAddr::new(ip, port)).await?;
 
+    // Send a protocol-specific request where we have one, so live services reply
+    // (an empty datagram only ever confirms closed). Falls back to empty.
+    let payload = super::udp_probes::payload_for(port);
+
     let mut buf = [0u8; 1024];
     for _ in 0..=retries {
         // A pending ICMP error from a previous probe can surface on send, too.
-        if let Err(e) = sock.send(&[]).await {
+        if let Err(e) = sock.send(payload).await {
             return Ok(verdict_for_send_error(port, e));
         }
         match timeout(wait, sock.recv(&mut buf)).await {
             Ok(Ok(n)) => {
-                let response = (n > 0).then(|| super::sanitise_banner(&buf[..n]));
-                return Ok(UdpResult { port, state: UdpState::Open, response });
+                return Ok(UdpResult { port, state: UdpState::Open, response: describe_reply(port, &buf[..n]) });
             }
             Ok(Err(e)) if e.kind() == io::ErrorKind::ConnectionRefused => {
                 return Ok(UdpResult { port, state: UdpState::Closed, response: None });
@@ -111,6 +114,20 @@ async fn probe_inner(ip: IpAddr, port: u16, wait: Duration, retries: u8) -> io::
         }
     }
     Ok(UdpResult { port, state: UdpState::OpenFiltered, response: None })
+}
+
+/// Summarise a reply: for a known protocol, lead with its name (binary replies
+/// like NTP/SNMP sanitise to noise, so the name is the signal) and append any
+/// printable text; otherwise use the sanitised bytes.
+fn describe_reply(port: u16, data: &[u8]) -> Option<String> {
+    let text = super::sanitise_banner(data);
+    let printable = text.chars().filter(|c| c.is_ascii_graphic()).count();
+    match super::udp_probes::probe_name(port) {
+        Some(proto) if printable >= 4 => Some(format!("{proto}: {text}")),
+        Some(proto) => Some(proto.to_string()),
+        None if text.is_empty() => Some("open".to_string()),
+        None => Some(text),
+    }
 }
 
 fn verdict_for_send_error(port: u16, e: io::Error) -> UdpResult {

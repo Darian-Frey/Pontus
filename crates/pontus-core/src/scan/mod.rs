@@ -15,6 +15,7 @@ pub mod stateful;
 pub mod stateless;
 pub mod tcp;
 pub mod udp;
+pub mod udp_probes;
 
 /// Render service-banner / probe-response bytes as a single safe ASCII line: drop
 /// leading/trailing whitespace and control bytes (e.g. a trailing CRLF), then map
