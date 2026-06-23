@@ -6,6 +6,7 @@
 //! resolve to durable assets, and a scan writes append-only observations against
 //! them (D-007).
 
+pub mod diff;
 pub mod discovery;
 pub mod error;
 pub mod identity;
@@ -15,12 +16,13 @@ pub mod scan;
 pub mod scope;
 pub mod store;
 
+pub use diff::{HostDiff, HostStatus, diff_observations};
 pub use discovery::{DiscoveredHost, DiscoveryError, Method};
 pub use scan::{HostPorts, OpenPort, ScanConfig, scan_hosts};
 pub use error::{Error, Result};
 pub use model::{IdentityKind, IdentitySignals, ObservationState, PortObservation};
 pub use scope::{Scope, ScopeError};
-pub use store::{AssetSummary, Store};
+pub use store::{AssetSummary, HostObservation, ScanRef, Store};
 
 #[cfg(test)]
 mod tests;

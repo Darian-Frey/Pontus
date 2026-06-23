@@ -15,12 +15,12 @@ Pontus is a GUI-native network scanner and asset-inventory platform — a modern
 
 ### Phase 1 progress
 
-- **Done:** workspace scaffold; `pontus-core` `assets`/`observations`/`scans` schema with trigger-enforced append-only observations (F-003); identity resolution MAC → host-key → hostname → IP with promotion (F-004); unconditional scope enforcement + audit log (F-007); native host discovery — ARP + ICMP echo over IPv4/IPv6 with privilege fallback (F-001); hybrid scan pipeline — stateless SYN sweep → stateful connect/banner deep pass, shared raw-socket plumbing in `raw.rs` (F-002); `pontus-cli` scan/assets (F-005, partial). Validated live on a reference /24: 7 hosts → 7 durable assets, stable across three re-scans; port scan of a reference host is an exact match with `nmap -sS`.
-- **Next:** `pontus-cli diff` to surface drift across the stored observations (F-014 territory) — the next concrete step. Then UDP scanning, large-range send-batching for the stateless sweep (the "/16 in seconds" claim), and rDNS to populate the hostname identity tier.
+- **Done:** workspace scaffold; `pontus-core` `assets`/`observations`/`scans` schema with trigger-enforced append-only observations (F-003); identity resolution MAC → host-key → hostname → IP with promotion (F-004); unconditional scope enforcement + audit log (F-007); native host discovery — ARP + ICMP echo over IPv4/IPv6 with privilege fallback (F-001); hybrid scan pipeline — stateless SYN sweep → stateful connect/banner deep pass, shared raw-socket plumbing in `raw.rs` (F-002); scan diff — headless `diff::diff_observations` comparing two scans by `asset_id` (F-014 first cut); `pontus-cli` scan/assets/diff (F-005). Validated live on a reference /24: 7 hosts → 7 durable assets, stable across three re-scans; port scan of a reference host is an exact match with `nmap -sS`; drift surfaces opened/closed ports against a stable asset.
+- **Next:** no single mandated step — the headline Phase 1 acceptance is met. Candidate refinements: an automated integration-test harness (lock in the manual live checks); UDP scanning; large-range send-batching for the stateless sweep (the "/16 in seconds" claim); rDNS to populate the hostname identity tier. Then Phase 2 (GUI) once Phase 1 is declared done.
 
 ## Active task
 
-Phase 1, Foundation — continuing. Next concrete step: `pontus-cli diff` (compare two scans of a subnet; opened/closed ports, new/vanished hosts), reading the append-only observations against stable `asset_id`.
+Phase 1, Foundation — headline acceptance met (build, scope, identity/forced-IP, /24 inventory, nmap-matching port scan, drift diff). Remaining work is refinement (see "Next" above); pick per priority before moving to Phase 2.
 
 **Phase 1 acceptance (status):**
 
