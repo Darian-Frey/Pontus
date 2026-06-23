@@ -19,7 +19,7 @@ Phases group features from [VISION.md](VISION.md). The ordering reflects D-006 (
 - [x] `pontus-core`: host identity resolution (MAC → host key/cert → hostname → IP)
 - [x] `pontus-core`: mandatory scope enforcement + audit log
 - [x] `pontus-cli`: scan, list assets, diff (diff compares two scans by asset_id — opened/closed ports, new/vanished hosts, IP moves)
-- [~] Smoke + integration test harness against a known reference subnet (unit tests in place; live /24 validated manually)
+- [x] Smoke + integration test harness (38 tests: unit + public-API integration covering store/identity/scope/diff and real-socket connect scan; raw-socket paths validated manually on a live /24)
 
 **Acceptance:** two CLI scans of the same subnet produce one asset per host and two observation sets; a forced IP change still resolves to the same asset; an out-of-scope target is refused before any packet is sent; results match Nmap host discovery and a SYN scan on a reference host within an explained delta.
 
