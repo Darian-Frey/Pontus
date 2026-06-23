@@ -10,16 +10,16 @@ Phases group features from [VISION.md](VISION.md). The ordering reflects D-006 (
 ## Phase 1 — Foundation
 
 **Goal:** A native Rust scan engine and the asset/observation store, driveable from the CLI — the shippable v0.1 core that everything else bolts onto.
-**Status:** Not started
+**Status:** In progress
 **Features delivered:** F-001, F-002, F-003, F-004, F-005, F-006, F-007
 **Deliverables:**
-- [ ] `pontus-core`: host discovery (ARP/ICMP/TCP/UDP) over IPv4 and IPv6
+- [x] `pontus-core`: host discovery — ARP + ICMP echo over IPv4 and IPv6 (TCP/UDP ping still to add; ARP yields MAC)
 - [ ] `pontus-core`: hybrid scan pipeline — stateless wide sweep → stateful deep pass
-- [ ] `pontus-core`: `assets` + `observations` schema in SQLite, append-only observations
-- [ ] `pontus-core`: host identity resolution (MAC → host key/cert → hostname → IP)
-- [ ] `pontus-core`: mandatory scope enforcement + audit log
-- [ ] `pontus-cli`: scan, list assets, diff
-- [ ] Smoke + integration test harness against a known reference subnet
+- [x] `pontus-core`: `assets` + `observations` schema in SQLite, append-only observations (trigger-enforced)
+- [x] `pontus-core`: host identity resolution (MAC → host key/cert → hostname → IP)
+- [x] `pontus-core`: mandatory scope enforcement + audit log
+- [~] `pontus-cli`: scan, list assets, diff (scan + assets done; diff pending)
+- [~] Smoke + integration test harness against a known reference subnet (unit tests in place; live /24 validated manually)
 
 **Acceptance:** two CLI scans of the same subnet produce one asset per host and two observation sets; a forced IP change still resolves to the same asset; an out-of-scope target is refused before any packet is sent; results match Nmap host discovery and a SYN scan on a reference host within an explained delta.
 
