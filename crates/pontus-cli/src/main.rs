@@ -5,7 +5,9 @@
 use clap::{Parser, Subcommand};
 use ipnet::IpNet;
 use pontus_core::discovery::{self, DiscoveredHost, Method};
+use pontus_core::scan::{OpenPort, ScanConfig, scan_hosts};
 use pontus_core::{IdentitySignals, ObservationState, PortObservation, Scope, Store};
+use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::process::ExitCode;
 use std::time::Duration;
@@ -48,13 +50,18 @@ struct ScanArgs {
     /// How long discovery listens for replies, milliseconds.
     #[arg(long, default_value_t = 1000)]
     discovery_timeout_ms: u64,
-    /// TCP ports probed to enrich a discovered host with open-port hints (interim,
-    /// pending the F-002 stateful pass).
+    /// TCP ports to scan on each live host (hybrid SYN sweep → connect deep pass).
     #[arg(long, default_value = "22,80,443,445,3389,8080")]
     ports: String,
-    /// Per-port connect timeout, milliseconds.
+    /// How long the stateless SYN sweep listens for SYN-ACKs, milliseconds.
+    #[arg(long, default_value_t = 800)]
+    sweep_timeout_ms: u64,
+    /// Per-port connect timeout in the deep pass, milliseconds.
     #[arg(long, default_value_t = 400)]
     timeout_ms: u64,
+    /// How long to wait for a service banner after connecting, milliseconds.
+    #[arg(long, default_value_t = 500)]
+    banner_timeout_ms: u64,
 }
 
 #[tokio::main]
@@ -110,13 +117,36 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => return Err(e.into()),
     };
 
+    // Port-scan the live hosts (hybrid: stateless SYN sweep → stateful deep pass).
+    let live_ips: Vec<IpAddr> = hosts.iter().map(|h| h.ip).collect();
+    let cfg = ScanConfig {
+        ports,
+        sweep_wait: Duration::from_millis(args.sweep_timeout_ms),
+        connect_timeout: port_timeout,
+        banner_wait: Duration::from_millis(args.banner_timeout_ms),
+    };
+    let scanned: HashMap<IpAddr, Vec<OpenPort>> = scan_hosts(&live_ips, &cfg)
+        .await?
+        .into_iter()
+        .map(|hp| (hp.ip, hp.open))
+        .collect();
+
     let mut up = 0u64;
     for host in &hosts {
-        // Enrich the liveness result with open-port hints (interim) and resolve to
-        // a durable asset. ARP-discovered hosts carry a MAC — the strongest
-        // identity signal (F-004).
-        let mut state = probe(host.ip, &ports, port_timeout).unwrap_or_default();
-        state.up = true;
+        let open = scanned.get(&host.ip).cloned().unwrap_or_default();
+        // Resolve to a durable asset (ARP-discovered hosts carry a MAC — the
+        // strongest identity signal, F-004) and append one observation.
+        let observed_ports = open
+            .iter()
+            .map(|p| PortObservation {
+                port: p.port,
+                proto: p.proto.to_string(),
+                // Banner kept as an interim service hint pending the Detector (Phase 3).
+                service: p.banner.clone(),
+                version: None,
+            })
+            .collect();
+        let state = ObservationState { up: true, open_ports: observed_ports, os_guess: None };
         let sig = IdentitySignals {
             mac: host.mac.map(|m| m.to_string()),
             ip: Some(host.ip),
@@ -124,7 +154,13 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         };
         store.record(&sig, scan_id, &state)?;
         up += 1;
-        println!("  up: {:<39}  {:<4}  {}", host.ip, host.method.as_str(), mac_label(host));
+        println!(
+            "  up: {:<39}  {:<4}  {:<17}  ports: {}",
+            host.ip,
+            host.method.as_str(),
+            mac_label(host),
+            render_ports(&open),
+        );
     }
 
     store.finish_scan(scan_id)?;
@@ -199,6 +235,28 @@ fn probe(host: IpAddr, ports: &[u16], timeout: Duration) -> Option<ObservationSt
         }
     }
     reachable.then_some(ObservationState { up: true, open_ports, os_guess: None })
+}
+
+/// Render open ports for the console, annotating with a short banner where present.
+fn render_ports(open: &[OpenPort]) -> String {
+    if open.is_empty() {
+        return "-".to_string();
+    }
+    open.iter()
+        .map(|p| match &p.banner {
+            Some(b) if !b.is_empty() => format!("{}({})", p.port, truncate(b, 24)),
+            _ => p.port.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn truncate(s: &str, n: usize) -> String {
+    if s.chars().count() > n {
+        format!("{}…", s.chars().take(n).collect::<String>())
+    } else {
+        s.to_string()
+    }
 }
 
 fn parse_ports(spec: &str) -> Result<Vec<u16>, String> {
