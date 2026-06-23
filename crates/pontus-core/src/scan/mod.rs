@@ -14,6 +14,20 @@
 pub mod stateful;
 pub mod stateless;
 pub mod tcp;
+pub mod udp;
+
+/// Render service-banner / probe-response bytes as a single safe ASCII line: drop
+/// leading/trailing whitespace and control bytes (e.g. a trailing CRLF), then map
+/// any interior non-graphic byte to '.'. Shared by the TCP banner grab and UDP
+/// response capture.
+pub(crate) fn sanitise_banner(bytes: &[u8]) -> String {
+    let start = bytes.iter().position(u8::is_ascii_graphic).unwrap_or(0);
+    let end = bytes.iter().rposition(u8::is_ascii_graphic).map_or(start, |i| i + 1);
+    bytes[start..end]
+        .iter()
+        .map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '.' })
+        .collect()
+}
 
 use crate::discovery::DiscoveryError;
 use std::net::IpAddr;

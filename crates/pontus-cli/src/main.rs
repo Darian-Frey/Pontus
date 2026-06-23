@@ -5,6 +5,7 @@
 use clap::{Parser, Subcommand};
 use ipnet::IpNet;
 use pontus_core::discovery::{self, DiscoveredHost, Method};
+use pontus_core::scan::udp::{self, UdpConfig, UdpState};
 use pontus_core::scan::{OpenPort, ScanConfig, scan_hosts};
 use pontus_core::{IdentitySignals, ObservationState, PortObservation, Scope, Store};
 use std::collections::HashMap;
@@ -80,6 +81,16 @@ struct ScanArgs {
     /// Skip reverse-DNS resolution of discovered hosts.
     #[arg(long)]
     no_rdns: bool,
+    /// UDP ports to scan on each live host (off by default). Reports open and
+    /// open|filtered; closed ports (ICMP-unreachable) are omitted.
+    #[arg(long, value_name = "PORTS")]
+    udp_ports: Option<String>,
+    /// Per-port UDP wait for a reply, milliseconds.
+    #[arg(long, default_value_t = 1000)]
+    udp_timeout_ms: u64,
+    /// UDP probe retries (UDP is lossy; a retry cuts false open|filtered).
+    #[arg(long, default_value_t = 1)]
+    udp_retries: u8,
 }
 
 #[tokio::main]
@@ -157,22 +168,53 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         resolve_hostnames(&live_ips).await
     };
 
+    // Optional UDP pass over the live hosts.
+    let udp_ports = match &args.udp_ports {
+        Some(spec) => parse_ports(spec)?,
+        None => Vec::new(),
+    };
+    let udp_cfg = UdpConfig {
+        timeout: Duration::from_millis(args.udp_timeout_ms),
+        retries: args.udp_retries,
+    };
+
     let mut up = 0u64;
     for host in &hosts {
         let open = scanned.get(&host.ip).cloned().unwrap_or_default();
         let hostname = hostnames.get(&host.ip).cloned();
-        // Resolve to a durable asset (ARP-discovered hosts carry a MAC — the
-        // strongest identity signal, F-004) and append one observation.
-        let observed_ports = open
+
+        // TCP open ports become observations directly; banners are interim service
+        // hints pending the Detector (Phase 3).
+        let mut observed_ports: Vec<PortObservation> = open
             .iter()
             .map(|p| PortObservation {
                 port: p.port,
                 proto: p.proto.to_string(),
-                // Banner kept as an interim service hint pending the Detector (Phase 3).
                 service: p.banner.clone(),
                 version: None,
             })
             .collect();
+
+        // UDP pass: record open and open|filtered (closed is omitted).
+        let udp_results = if udp_ports.is_empty() {
+            Vec::new()
+        } else {
+            udp::scan_host(host.ip, &udp_ports, &udp_cfg).await
+        };
+        for r in &udp_results {
+            if r.state == UdpState::Closed {
+                continue;
+            }
+            observed_ports.push(PortObservation {
+                port: r.port,
+                proto: "udp".to_string(),
+                service: r.response.clone().or_else(|| Some(r.state.as_str().to_string())),
+                version: None,
+            });
+        }
+
+        // Resolve to a durable asset (ARP-discovered hosts carry a MAC — the
+        // strongest identity signal, F-004) and append one observation.
         let state = ObservationState { up: true, open_ports: observed_ports, os_guess: None };
         let sig = IdentitySignals {
             mac: host.mac.map(|m| m.to_string()),
@@ -190,6 +232,10 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
             hostname.as_deref().unwrap_or("-"),
             render_ports(&open),
         );
+        let udp_shown = render_udp(&udp_results);
+        if !udp_shown.is_empty() {
+            println!("         udp: {udp_shown}");
+        }
     }
 
     store.finish_scan(scan_id)?;
@@ -303,7 +349,7 @@ fn run_diff(db: &str, from: Option<i64>, to: Option<i64>, all: bool) -> Result<(
     Ok(())
 }
 
-fn join_ports(ports: &[u16]) -> String {
+fn join_ports(ports: &[pontus_core::PortRef]) -> String {
     ports.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(",")
 }
 
@@ -371,6 +417,19 @@ fn render_ports(open: &[OpenPort]) -> String {
         .map(|p| match &p.banner {
             Some(b) if !b.is_empty() => format!("{}({})", p.port, truncate(b, 24)),
             _ => p.port.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Render UDP results (open and open|filtered) for the console; closed omitted.
+fn render_udp(results: &[udp::UdpResult]) -> String {
+    results
+        .iter()
+        .filter(|r| r.state != UdpState::Closed)
+        .map(|r| match &r.response {
+            Some(b) if !b.is_empty() => format!("{}({})", r.port, truncate(b, 20)),
+            _ => format!("{}({})", r.port, r.state.as_str()),
         })
         .collect::<Vec<_>>()
         .join(", ")

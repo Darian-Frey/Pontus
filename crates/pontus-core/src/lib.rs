@@ -17,7 +17,7 @@ pub mod scan;
 pub mod scope;
 pub mod store;
 
-pub use diff::{HostDiff, HostStatus, diff_observations};
+pub use diff::{HostDiff, HostStatus, PortRef, diff_observations};
 pub use discovery::{DiscoveredHost, DiscoveryError, Method};
 pub use scan::{HostPorts, OpenPort, ScanConfig, scan_hosts};
 pub use error::{Error, Result};
