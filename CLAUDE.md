@@ -16,7 +16,7 @@ Pontus is a GUI-native network scanner and asset-inventory platform — a modern
 ### Phase 1 progress
 
 - **Done:** workspace scaffold; `pontus-core` `assets`/`observations`/`scans` schema with trigger-enforced append-only observations (F-003); identity resolution MAC → host-key → hostname → IP with promotion (F-004); unconditional scope enforcement + audit log (F-007); native host discovery — ARP + ICMP echo over IPv4/IPv6 with privilege fallback (F-001); hybrid scan pipeline — stateless SYN sweep → stateful connect/banner deep pass, shared raw-socket plumbing in `raw.rs` (F-002); scan diff — headless `diff::diff_observations` comparing two scans by `asset_id` (F-014 first cut); `pontus-cli` scan/assets/diff (F-005). Validated live on a reference /24: 7 hosts → 7 durable assets, stable across three re-scans; port scan of a reference host is an exact match with `nmap -sS`; drift surfaces opened/closed ports against a stable asset.
-- **Next:** Phase 1 deliverables are all addressed (38-test unit + integration harness now in place). Candidate refinements before/around Phase 2: UDP scanning; large-range send-batching for the stateless sweep (the "/16 in seconds" claim); rDNS to populate the hostname identity tier. Then Phase 2 (GUI + `pontus-ffi`) — a toolchain jump (Qt/C++ alongside Rust).
+- **Next:** Phase 1 deliverables are all addressed (39-test suite); rDNS now fills the hostname identity tier (`rdns::reverse_lookup` via system `getnameinfo`, wired into `pontus-cli scan` with `--no-rdns`). Remaining refinements: UDP scanning; large-range send-batching for the stateless sweep (the "/16 in seconds" claim). Then Phase 2 (GUI + `pontus-ffi`) — a toolchain jump (Qt/C++ alongside Rust).
 
 ## Active task
 
