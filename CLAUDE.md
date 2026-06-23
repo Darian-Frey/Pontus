@@ -15,12 +15,12 @@ Pontus is a GUI-native network scanner and asset-inventory platform — a modern
 
 ### Phase 1 progress
 
-- **Done:** workspace scaffold; `pontus-core` `assets`/`observations`/`scans` schema with trigger-enforced append-only observations (F-003); identity resolution MAC → host-key → hostname → IP with promotion (F-004); unconditional scope enforcement + audit log (F-007); native host discovery — ARP + ICMP echo over IPv4/IPv6 with privilege fallback (F-001); `pontus-cli` scan/assets (F-005, partial). Validated live on a reference /24: 7 hosts → 7 durable assets, stable across re-scan, host count matches privileged nmap.
-- **Next:** F-002 hybrid scan pipeline (stateless wide sweep → stateful deep pass), replacing the interim TCP-connect port probe in the CLI. Then `pontus-cli diff`, and rDNS to populate the hostname identity tier.
+- **Done:** workspace scaffold; `pontus-core` `assets`/`observations`/`scans` schema with trigger-enforced append-only observations (F-003); identity resolution MAC → host-key → hostname → IP with promotion (F-004); unconditional scope enforcement + audit log (F-007); native host discovery — ARP + ICMP echo over IPv4/IPv6 with privilege fallback (F-001); hybrid scan pipeline — stateless SYN sweep → stateful connect/banner deep pass, shared raw-socket plumbing in `raw.rs` (F-002); `pontus-cli` scan/assets (F-005, partial). Validated live on a reference /24: 7 hosts → 7 durable assets, stable across three re-scans; port scan of a reference host is an exact match with `nmap -sS`.
+- **Next:** `pontus-cli diff` to surface drift across the stored observations (F-014 territory) — the next concrete step. Then UDP scanning, large-range send-batching for the stateless sweep (the "/16 in seconds" claim), and rDNS to populate the hostname identity tier.
 
 ## Active task
 
-Phase 1, Foundation — continuing. Next concrete step: the F-002 hybrid scan pipeline in `pontus-core` (stateless async wide sweep feeding a stateful deep pass), then wire it into `pontus-cli` in place of the interim port probe.
+Phase 1, Foundation — continuing. Next concrete step: `pontus-cli diff` (compare two scans of a subnet; opened/closed ports, new/vanished hosts), reading the append-only observations against stable `asset_id`.
 
 **Phase 1 acceptance (status):**
 
@@ -28,7 +28,7 @@ Phase 1, Foundation — continuing. Next concrete step: the F-002 hybrid scan pi
 - A CLI scan of a reference /24 writes one asset per host and an observation set. ✅ (live)
 - A forced IP change resolves to the same asset (F-004 acceptance). ✅ (unit; stable across live re-scan)
 - An out-of-scope target is refused before any packet is sent (F-007). ✅
-- Hybrid port scan results match a full Nmap SYN scan on a reference host. ⏳ (F-002, next)
+- Hybrid port scan results match a full Nmap SYN scan on a reference host. ✅ (live, exact match)
 
 ## Architectural invariants
 

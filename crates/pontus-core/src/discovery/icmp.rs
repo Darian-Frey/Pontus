@@ -10,8 +10,9 @@
 //! layer plus an on-network run.
 
 use super::packet;
-use super::{DiscoveredHost, DiscoveryError, Method, priv_or_io};
-use socket2::{Domain, Protocol, SockAddr, Socket, Type};
+use super::{DiscoveredHost, DiscoveryError, Method};
+use crate::raw::{raw_socket, recv, recv_from, send_to};
+use socket2::{Domain, Protocol, Socket};
 use std::collections::HashSet;
 use std::io;
 use std::mem::MaybeUninit;
@@ -19,7 +20,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::os::fd::AsRawFd;
 use std::time::Duration;
 use tokio::io::unix::AsyncFd;
-use tokio::time::{Instant, timeout};
+use tokio::time::Instant;
 
 /// Identifier stamped into our echo requests so we ignore unrelated ICMP traffic.
 const ICMP_ID: u16 = 0x504e; // 'PN'
@@ -96,12 +97,6 @@ pub async fn sweep_v6(targets: &[Ipv6Addr], wait: Duration) -> Result<Vec<Discov
 
 // ---- socket plumbing ------------------------------------------------------
 
-fn raw_socket(domain: Domain, proto: Protocol) -> Result<Socket, DiscoveryError> {
-    let socket = Socket::new(domain, Type::RAW, Some(proto)).map_err(priv_or_io)?;
-    socket.set_nonblocking(true)?;
-    Ok(socket)
-}
-
 /// Set `IPV6_CHECKSUM` so the kernel fills the ICMPv6 checksum at offset 2.
 fn set_icmpv6_checksum_offload(socket: &Socket) -> io::Result<()> {
     let offset: libc::c_int = 2;
@@ -120,51 +115,4 @@ fn set_icmpv6_checksum_offload(socket: &Socket) -> io::Result<()> {
         return Err(io::Error::last_os_error());
     }
     Ok(())
-}
-
-async fn send_to(afd: &AsyncFd<Socket>, buf: &[u8], dst: SocketAddr) -> Result<(), DiscoveryError> {
-    let addr = SockAddr::from(dst);
-    loop {
-        let mut guard = afd.writable().await?;
-        match guard.try_io(|inner| inner.get_ref().send_to(buf, &addr)) {
-            Ok(res) => return res.map(|_| ()).map_err(DiscoveryError::Io),
-            Err(_would_block) => continue,
-        }
-    }
-}
-
-/// Read one datagram (discarding the source) before `deadline`, or `None` on timeout.
-async fn recv<'a>(
-    afd: &AsyncFd<Socket>,
-    buf: &'a mut [MaybeUninit<u8>],
-    deadline: Instant,
-) -> Result<Option<&'a [u8]>, DiscoveryError> {
-    Ok(recv_from(afd, buf, deadline).await?.map(|(data, _)| data))
-}
-
-/// Read one datagram with its source address before `deadline`, or `None` on timeout.
-async fn recv_from<'a>(
-    afd: &AsyncFd<Socket>,
-    buf: &'a mut [MaybeUninit<u8>],
-    deadline: Instant,
-) -> Result<Option<(&'a [u8], SockAddr)>, DiscoveryError> {
-    loop {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            return Ok(None);
-        }
-        let mut guard = match timeout(remaining, afd.readable()).await {
-            Ok(g) => g?,
-            Err(_) => return Ok(None),
-        };
-        match guard.try_io(|inner| inner.get_ref().recv_from(buf)) {
-            Ok(Ok((n, from))) => {
-                // SAFETY: the kernel initialised the first `n` bytes of `buf`.
-                let data = unsafe { &*(&buf[..n] as *const [MaybeUninit<u8>] as *const [u8]) };
-                return Ok(Some((data, from)));
-            }
-            Ok(Err(e)) => return Err(DiscoveryError::Io(e)),
-            Err(_would_block) => continue,
-        }
-    }
 }

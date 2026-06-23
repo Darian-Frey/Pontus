@@ -10,10 +10,13 @@ pub mod discovery;
 pub mod error;
 pub mod identity;
 pub mod model;
+mod raw;
+pub mod scan;
 pub mod scope;
 pub mod store;
 
 pub use discovery::{DiscoveredHost, DiscoveryError, Method};
+pub use scan::{HostPorts, OpenPort, ScanConfig, scan_hosts};
 pub use error::{Error, Result};
 pub use model::{IdentityKind, IdentitySignals, ObservationState, PortObservation};
 pub use scope::{Scope, ScopeError};
