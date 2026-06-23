@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::process::ExitCode;
 use std::time::Duration;
+use tokio::task::JoinSet;
 
 #[derive(Parser)]
 #[command(
@@ -76,6 +77,9 @@ struct ScanArgs {
     /// How long to wait for a service banner after connecting, milliseconds.
     #[arg(long, default_value_t = 500)]
     banner_timeout_ms: u64,
+    /// Skip reverse-DNS resolution of discovered hosts.
+    #[arg(long)]
+    no_rdns: bool,
 }
 
 #[tokio::main]
@@ -146,9 +150,17 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         .map(|hp| (hp.ip, hp.open))
         .collect();
 
+    // Reverse-DNS the live hosts to populate the hostname identity tier (F-004).
+    let hostnames = if args.no_rdns {
+        HashMap::new()
+    } else {
+        resolve_hostnames(&live_ips).await
+    };
+
     let mut up = 0u64;
     for host in &hosts {
         let open = scanned.get(&host.ip).cloned().unwrap_or_default();
+        let hostname = hostnames.get(&host.ip).cloned();
         // Resolve to a durable asset (ARP-discovered hosts carry a MAC — the
         // strongest identity signal, F-004) and append one observation.
         let observed_ports = open
@@ -164,16 +176,18 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         let state = ObservationState { up: true, open_ports: observed_ports, os_guess: None };
         let sig = IdentitySignals {
             mac: host.mac.map(|m| m.to_string()),
+            hostname: hostname.clone(),
             ip: Some(host.ip),
             ..Default::default()
         };
         store.record(&sig, scan_id, &state)?;
         up += 1;
         println!(
-            "  up: {:<39}  {:<4}  {:<17}  ports: {}",
+            "  up: {:<39}  {:<4}  {:<17}  {:<24}  ports: {}",
             host.ip,
             host.method.as_str(),
             mac_label(host),
+            hostname.as_deref().unwrap_or("-"),
             render_ports(&open),
         );
     }
@@ -196,15 +210,16 @@ fn list_assets(db: &str) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     println!(
-        "{:>4}  {:<9}  {:<24}  {:<16}  {:>4}  LAST SEEN",
-        "ID", "ANCHOR", "IDENTITY", "LAST IP", "OBS"
+        "{:>4}  {:<9}  {:<24}  {:<24}  {:<16}  {:>4}  LAST SEEN",
+        "ID", "ANCHOR", "IDENTITY", "HOSTNAME", "LAST IP", "OBS"
     );
     for a in assets {
         println!(
-            "{:>4}  {:<9}  {:<24}  {:<16}  {:>4}  {}",
+            "{:>4}  {:<9}  {:<24}  {:<24}  {:<16}  {:>4}  {}",
             a.id,
             a.identity_kind,
             a.identity_value,
+            a.hostname.as_deref().unwrap_or("-"),
             a.last_ip.as_deref().unwrap_or("-"),
             a.observations,
             a.last_seen,
@@ -290,6 +305,22 @@ fn run_diff(db: &str, from: Option<i64>, to: Option<i64>, all: bool) -> Result<(
 
 fn join_ports(ports: &[u16]) -> String {
     ports.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(",")
+}
+
+/// Reverse-DNS every live IP concurrently (each lookup is blocking, so it runs on
+/// the blocking pool). Returns only the hosts that resolved.
+async fn resolve_hostnames(ips: &[IpAddr]) -> HashMap<IpAddr, String> {
+    let mut set = JoinSet::new();
+    for &ip in ips {
+        set.spawn_blocking(move || (ip, pontus_core::rdns::reverse_lookup(ip)));
+    }
+    let mut map = HashMap::new();
+    while let Some(res) = set.join_next().await {
+        if let Ok((ip, Some(name))) = res {
+            map.insert(ip, name);
+        }
+    }
+    map
 }
 
 fn mac_label(host: &DiscoveredHost) -> String {

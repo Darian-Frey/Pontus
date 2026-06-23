@@ -12,6 +12,7 @@ pub mod error;
 pub mod identity;
 pub mod model;
 mod raw;
+pub mod rdns;
 pub mod scan;
 pub mod scope;
 pub mod store;

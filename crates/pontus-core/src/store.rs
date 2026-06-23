@@ -86,6 +86,7 @@ pub struct AssetSummary {
     pub id: i64,
     pub identity_kind: String,
     pub identity_value: String,
+    pub hostname: Option<String>,
     pub last_ip: Option<String>,
     pub last_seen: String,
     pub observations: i64,
@@ -162,7 +163,7 @@ impl Store {
     /// All assets with their observation counts, newest sighting first.
     pub fn list_assets(&self) -> Result<Vec<AssetSummary>> {
         let mut stmt = self.conn.prepare(
-            "SELECT a.id, a.identity_kind, a.identity_value, a.last_ip, a.last_seen,
+            "SELECT a.id, a.identity_kind, a.identity_value, a.hostname, a.last_ip, a.last_seen,
                     (SELECT COUNT(*) FROM observations o WHERE o.asset_id = a.id)
              FROM assets a
              ORDER BY a.last_seen DESC, a.id ASC",
@@ -172,9 +173,10 @@ impl Store {
                 id: r.get(0)?,
                 identity_kind: r.get(1)?,
                 identity_value: r.get(2)?,
-                last_ip: r.get(3)?,
-                last_seen: r.get(4)?,
-                observations: r.get(5)?,
+                hostname: r.get(3)?,
+                last_ip: r.get(4)?,
+                last_seen: r.get(5)?,
+                observations: r.get(6)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
