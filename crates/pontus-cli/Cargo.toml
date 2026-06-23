@@ -1,0 +1,11 @@
+[package]
+name = "pontus-cli"
+description = "Command-line client over pontus-core; the Phase 1 driver (F-005)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+pontus-core = { path = "../pontus-core" }
+clap.workspace = true
+ipnet.workspace = true

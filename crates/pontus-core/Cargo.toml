@@ -1,0 +1,14 @@
+[package]
+name = "pontus-core"
+description = "Pontus headless scan engine and asset/observation model (D-001)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rusqlite.workspace = true
+ipnet.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
