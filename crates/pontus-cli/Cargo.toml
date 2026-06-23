@@ -9,3 +9,4 @@ rust-version.workspace = true
 pontus-core = { path = "../pontus-core" }
 clap.workspace = true
 ipnet.workspace = true
+tokio.workspace = true

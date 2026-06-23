@@ -2,7 +2,7 @@
 
 ## Project
 
-Pontus is a GUI-native network scanner and asset-inventory platform — a modern, stateful successor to Nmap/Zenmap. It is at concept stage: the full document set exists, no code has been written. The next work is Phase 1 (native Rust engine + asset store + CLI).
+Pontus is a GUI-native network scanner and asset-inventory platform — a modern, stateful successor to Nmap/Zenmap. Phase 1 is under way: the document set is complete and the native Rust core + CLI now build and run.
 
 ## Current state
 
@@ -10,18 +10,25 @@ Pontus is a GUI-native network scanner and asset-inventory platform — a modern
 - `docs/ARCHITECTURE.md`: complete. Three-tier design, hybrid scan pipeline, asset/observation data model, invariants, `D-NNN` decision register (D-001–D-007; D-005 superseded by D-006).
 - `docs/ROADMAP.md`: complete. Five phases mapping to the feature register.
 - `README.md`: complete. Status header, intended quick-start/structure, documentation map.
-- `crates/`, `gui/`, `plugins/`: do not exist yet. To be created in Phase 1.
+- `crates/pontus-core`, `crates/pontus-cli`: exist and build (Cargo workspace). `gui/`, `plugins/`, and the other crates do not exist yet.
 - No `CHANGELOG.md`, `BUILD.md`, `DECISIONS.md`, `FEATURES.md` as separate files yet — see "Conventions" for where those registers currently live.
+
+### Phase 1 progress
+
+- **Done:** workspace scaffold; `pontus-core` `assets`/`observations`/`scans` schema with trigger-enforced append-only observations (F-003); identity resolution MAC → host-key → hostname → IP with promotion (F-004); unconditional scope enforcement + audit log (F-007); native host discovery — ARP + ICMP echo over IPv4/IPv6 with privilege fallback (F-001); `pontus-cli` scan/assets (F-005, partial). Validated live on a reference /24: 7 hosts → 7 durable assets, stable across re-scan, host count matches privileged nmap.
+- **Next:** F-002 hybrid scan pipeline (stateless wide sweep → stateful deep pass), replacing the interim TCP-connect port probe in the CLI. Then `pontus-cli diff`, and rDNS to populate the hostname identity tier.
 
 ## Active task
 
-Phase 1, Foundation. First concrete step: scaffold the Cargo workspace and `pontus-core` with the `assets`/`observations` schema (F-003) and host identity resolution (F-004), then host discovery (F-001).
+Phase 1, Foundation — continuing. Next concrete step: the F-002 hybrid scan pipeline in `pontus-core` (stateless async wide sweep feeding a stateful deep pass), then wire it into `pontus-cli` in place of the interim port probe.
 
-**Acceptance:**
-- Workspace builds; `pontus-core` and `pontus-cli` are present.
-- A CLI scan of a reference /24 writes one asset per host and an observation set.
-- A forced IP change resolves to the same asset (F-004 acceptance).
-- An out-of-scope target is refused before any packet is sent (F-007).
+**Phase 1 acceptance (status):**
+
+- Workspace builds; `pontus-core` and `pontus-cli` are present. ✅
+- A CLI scan of a reference /24 writes one asset per host and an observation set. ✅ (live)
+- A forced IP change resolves to the same asset (F-004 acceptance). ✅ (unit; stable across live re-scan)
+- An out-of-scope target is refused before any packet is sent (F-007). ✅
+- Hybrid port scan results match a full Nmap SYN scan on a reference host. ⏳ (F-002, next)
 
 ## Architectural invariants
 

@@ -6,12 +6,14 @@
 //! resolve to durable assets, and a scan writes append-only observations against
 //! them (D-007).
 
+pub mod discovery;
 pub mod error;
 pub mod identity;
 pub mod model;
 pub mod scope;
 pub mod store;
 
+pub use discovery::{DiscoveredHost, DiscoveryError, Method};
 pub use error::{Error, Result};
 pub use model::{IdentityKind, IdentitySignals, ObservationState, PortObservation};
 pub use scope::{Scope, ScopeError};
