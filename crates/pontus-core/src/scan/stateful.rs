@@ -48,19 +48,7 @@ async fn probe_port(ip: IpAddr, port: u16, connect_timeout: Duration, banner_wai
 async fn grab_banner(mut stream: TcpStream, wait: Duration) -> Option<String> {
     let mut buf = [0u8; 256];
     match timeout(wait, stream.read(&mut buf)).await {
-        Ok(Ok(n)) if n > 0 => Some(sanitise(&buf[..n])),
+        Ok(Ok(n)) if n > 0 => Some(super::sanitise_banner(&buf[..n])),
         _ => None,
     }
-}
-
-/// Render banner bytes as a single safe ASCII line: drop leading/trailing
-/// whitespace and control bytes (e.g. the CRLF many banners end with), then map
-/// any interior non-graphic byte to '.'.
-fn sanitise(bytes: &[u8]) -> String {
-    let start = bytes.iter().position(u8::is_ascii_graphic).unwrap_or(0);
-    let end = bytes.iter().rposition(u8::is_ascii_graphic).map_or(start, |i| i + 1);
-    bytes[start..end]
-        .iter()
-        .map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '.' })
-        .collect()
 }

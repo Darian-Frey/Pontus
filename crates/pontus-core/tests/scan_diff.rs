@@ -2,7 +2,11 @@
 //! observations back out (exercising the JSON (de)serialisation and the SQL join),
 //! and diff them. This is the path `pontus-cli diff` drives.
 
-use pontus_core::{HostStatus, IdentitySignals, ObservationState, PortObservation, Store, diff_observations};
+use pontus_core::{HostStatus, IdentitySignals, ObservationState, PortObservation, PortRef, Store, diff_observations};
+
+fn tcp(port: u16) -> PortRef {
+    PortRef { proto: "tcp".to_string(), port }
+}
 
 fn state(ports: &[u16]) -> ObservationState {
     ObservationState {
@@ -43,8 +47,8 @@ fn opened_and_closed_ports_surface_as_drift() {
 
     assert_eq!(diff.len(), 1);
     assert_eq!(diff[0].status, HostStatus::Changed);
-    assert_eq!(diff[0].opened, vec![443]);
-    assert_eq!(diff[0].closed, vec![22]);
+    assert_eq!(diff[0].opened, vec![tcp(443)]);
+    assert_eq!(diff[0].closed, vec![tcp(22)]);
 }
 
 #[test]

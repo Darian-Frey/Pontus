@@ -8,6 +8,20 @@
 use crate::store::HostObservation;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// A protocol/port pair — the unit ports are diffed by, so `tcp/53` and `udp/53`
+/// are distinct findings. Ordered (proto, then port) for stable output.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PortRef {
+    pub proto: String,
+    pub port: u16,
+}
+
+impl std::fmt::Display for PortRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.proto, self.port)
+    }
+}
+
 /// What happened to a host between the two scans.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostStatus {
@@ -31,9 +45,9 @@ pub struct HostDiff {
     pub ip: String,
     pub status: HostStatus,
     /// Ports open in the later scan but not the earlier one.
-    pub opened: Vec<u16>,
+    pub opened: Vec<PortRef>,
     /// Ports open in the earlier scan but not the later one.
-    pub closed: Vec<u16>,
+    pub closed: Vec<PortRef>,
     /// The earlier address, if the host moved (same asset, new IP — the C-003 case).
     pub moved_from: Option<String>,
 }
@@ -70,10 +84,10 @@ pub fn diff_observations(from: &[HostObservation], to: &[HostObservation]) -> Ve
                 moved_from: None,
             },
             (Some(f), Some(t)) => {
-                let before: BTreeSet<u16> = open_ports(f).into_iter().collect();
-                let after: BTreeSet<u16> = open_ports(t).into_iter().collect();
-                let opened: Vec<u16> = after.difference(&before).copied().collect();
-                let closed: Vec<u16> = before.difference(&after).copied().collect();
+                let before: BTreeSet<PortRef> = open_ports(f).into_iter().collect();
+                let after: BTreeSet<PortRef> = open_ports(t).into_iter().collect();
+                let opened: Vec<PortRef> = after.difference(&before).cloned().collect();
+                let closed: Vec<PortRef> = before.difference(&after).cloned().collect();
                 let moved_from = (f.ip != t.ip).then(|| f.ip.clone());
                 let status = if opened.is_empty() && closed.is_empty() && moved_from.is_none() {
                     HostStatus::Unchanged
@@ -98,8 +112,12 @@ pub fn diff_observations(from: &[HostObservation], to: &[HostObservation]) -> Ve
     diffs
 }
 
-fn open_ports(h: &HostObservation) -> Vec<u16> {
-    h.state.open_ports.iter().map(|p| p.port).collect()
+fn open_ports(h: &HostObservation) -> Vec<PortRef> {
+    h.state
+        .open_ports
+        .iter()
+        .map(|p| PortRef { proto: p.proto.clone(), port: p.port })
+        .collect()
 }
 
 #[cfg(test)]
@@ -124,6 +142,10 @@ mod tests {
         }
     }
 
+    fn tcp(port: u16) -> PortRef {
+        PortRef { proto: "tcp".to_string(), port }
+    }
+
     #[test]
     fn detects_new_and_vanished_hosts() {
         let from = vec![obs(1, "192.168.1.1", &[80])];
@@ -131,9 +153,9 @@ mod tests {
         let d = diff_observations(&from, &to);
         assert_eq!(d.len(), 2);
         assert_eq!(d[0].status, HostStatus::Vanished);
-        assert_eq!(d[0].closed, vec![80]);
+        assert_eq!(d[0].closed, vec![tcp(80)]);
         assert_eq!(d[1].status, HostStatus::New);
-        assert_eq!(d[1].opened, vec![22]);
+        assert_eq!(d[1].opened, vec![tcp(22)]);
     }
 
     #[test]
@@ -143,8 +165,8 @@ mod tests {
         let d = diff_observations(&from, &to);
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].status, HostStatus::Changed);
-        assert_eq!(d[0].opened, vec![443]);
-        assert_eq!(d[0].closed, vec![22]);
+        assert_eq!(d[0].opened, vec![tcp(443)]);
+        assert_eq!(d[0].closed, vec![tcp(22)]);
         assert!(d[0].moved_from.is_none());
     }
 

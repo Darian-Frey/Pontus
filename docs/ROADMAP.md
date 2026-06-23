@@ -14,7 +14,7 @@ Phases group features from [VISION.md](VISION.md). The ordering reflects D-006 (
 **Features delivered:** F-001, F-002, F-003, F-004, F-005, F-006, F-007
 **Deliverables:**
 - [x] `pontus-core`: host discovery — ARP + ICMP echo over IPv4 and IPv6 (TCP/UDP ping still to add; ARP yields MAC)
-- [x] `pontus-core`: hybrid scan pipeline — stateless SYN sweep → stateful connect/banner deep pass (UDP and large-range send-batching still to add)
+- [x] `pontus-core`: hybrid scan pipeline — stateless SYN sweep → stateful connect/banner deep pass; UDP scanning via connected sockets (large-range send-batching still to add)
 - [x] `pontus-core`: `assets` + `observations` schema in SQLite, append-only observations (trigger-enforced)
 - [x] `pontus-core`: host identity resolution (MAC → host key/cert → hostname → IP)
 - [x] `pontus-core`: mandatory scope enforcement + audit log
