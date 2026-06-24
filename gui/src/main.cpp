@@ -27,6 +27,21 @@ static int selftest(const QString& dbPath) {
                   << " identity=" << first.value("identity_value").toString().toStdString()
                   << " history=" << client.assetHistory(id).size() << " observation(s)\n";
     }
+
+    // Exercise the diff path (the data side of the drift view) over the two newest scans.
+    const QJsonArray scans = client.scans(10);
+    if (scans.size() >= 2) {
+        const long long toId = scans.at(0).toObject().value("id").toInt();
+        const long long fromId = scans.at(1).toObject().value("id").toInt();
+        int changed = 0;
+        for (const QJsonValue& v : client.diff(fromId, toId)) {
+            if (v.toObject().value("status").toString() != QStringLiteral("Unchanged")) {
+                ++changed;
+            }
+        }
+        std::cout << "  diff scan " << fromId << "->" << toId << ": " << changed
+                  << " host(s) changed/new/vanished\n";
+    }
     return 0;
 }
 

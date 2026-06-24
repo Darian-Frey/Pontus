@@ -26,6 +26,7 @@ private slots:
     void onOpen();
     void onRefresh();
     void onNewScan();
+    void onDiff();
     void onFilterChanged(const QString& text);
     void onSelectionChanged();
 

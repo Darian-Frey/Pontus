@@ -57,3 +57,7 @@ QJsonArray PontusClient::scans(long long limit) {
 QJsonArray PontusClient::assetHistory(long long assetId) {
     return handle_ ? parseAndFree(pontus_asset_history_json(handle_, assetId)) : QJsonArray{};
 }
+
+QJsonArray PontusClient::diff(long long fromScan, long long toScan) {
+    return handle_ ? parseAndFree(pontus_diff_json(handle_, fromScan, toScan)) : QJsonArray{};
+}

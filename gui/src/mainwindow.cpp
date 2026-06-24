@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "diffdialog.h"
 #include "scandialog.h"
 
 #include <QAction>
@@ -78,6 +79,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     QAction* newScanAct = scanMenu->addAction(QStringLiteral("&New scan…"));
     newScanAct->setShortcut(QKeySequence::New);
     connect(newScanAct, &QAction::triggered, this, &MainWindow::onNewScan);
+
+    QMenu* viewMenu = menuBar()->addMenu(QStringLiteral("&View"));
+    QAction* diffAct = viewMenu->addAction(QStringLiteral("&Drift / diff…"));
+    diffAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+D")));
+    connect(diffAct, &QAction::triggered, this, &MainWindow::onDiff);
 
     // Left: filter box over the asset table (the F-029 workhorse, first cut).
     filter_ = new QLineEdit;
@@ -168,6 +174,15 @@ void MainWindow::onNewScan() {
     if (!scanned.isEmpty()) {
         openDatabase(scanned);
     }
+}
+
+void MainWindow::onDiff() {
+    if (!client_.isOpen()) {
+        statusBar()->showMessage(QStringLiteral("Open a database first."));
+        return;
+    }
+    DiffDialog dialog(&client_, this);
+    dialog.exec();
 }
 
 QString MainWindow::findPontusCli() const {
