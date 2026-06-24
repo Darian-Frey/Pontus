@@ -90,6 +90,50 @@ Phases group features from [VISION.md](VISION.md). The ordering reflects D-006 (
 
 **Acceptance:** a scan exports to HTML, PDF, JSON and schema-valid SARIF 2.1; an existing Nmap XML imports with no loss in mapped fields; a signed registry plugin installs and an unsigned one is refused; core and GUI build and pass the smoke suite on Windows.
 
+---
+
+## Interface design tiers (Minimum / Good / Great)
+
+A capability view of the GUI that cuts across the phases above, derived from a review of comparable tools (2026-06-24): Zenmap, runZero, Lansweeper, Angry IP Scanner, plus change-monitoring and vulnerability-prioritisation dashboards. Each item is tagged with the `F-NNN` that delivers it and the phase it lands in. The interface-specific features this review surfaced (F-029–F-035) were added to the feature register in VISION.md.
+
+**Load-bearing principle — asset-centric, not scan-centric.** Zenmap organises its window around scans (Output / Ports-Hosts / Topology / Host-Details / Scans tabs); modern asset tools make the inventory the home and treat a scan as an event against it. That inversion is Pontus's thesis (D-007) and is the spine of the interface. The supporting principles, common to every source reviewed: breadth-first / progressive disclosure (overview → table → asset detail → observation → finding); sortable/filterable tables with saved views as the workhorse interaction; every screen actionable (a drift to investigate, a KEV to patch — never a raw dump); and scope surfaced as a visible safety feature, not a buried setting (F-007).
+
+### Minimum — table stakes (makes it usable)
+
+The credible v1; the read-side FFI (assets/history/scans/diff as JSON) already serves most of it.
+
+- Asset inventory table as the home screen — sortable/filterable columns (identity, anchor tier, last-seen, open-port count, up/down), colour-coded status (F-008, Phase 2).
+- Asset detail pane — identity resolution, open ports/services/banners, and the observation history (F-008, Phase 2).
+- Scan launcher with the scope field front-and-centre and live output (F-010, Phase 2).
+- Scan history list; pick two scans to compare (F-005/F-014, Phase 2).
+- Global search/filter over the inventory (F-029, Phase 2).
+- Inventory persists across restarts (F-008 acceptance; already true via SQLite).
+
+### Good — what makes it better than Zenmap/Angry IP
+
+The differentiating tier; this is where the asset model pays off.
+
+- Drift / diff view — two scans (or baseline vs now) rendered as opened/closed ports, new/vanished hosts, IP-moves; colour-coded (F-014, Phase 3).
+- Baselines — designate a reference scan and always diff against it (F-014, Phase 3).
+- Saved views / smart filters — e.g. "port 22 open", "new since baseline", "SNMP-exposed" (F-030, Phase 2–3). Highest-leverage UX investment per the research.
+- Overview dashboard — total assets, up/down, new-since-baseline, most-exposed services (F-031, Phase 2–3).
+- Live topology graph — interactive force-directed from traceroute hops (F-009, Phase 2).
+- Service/port heatmap — subnet-wide shared-exposure view (F-011, Phase 2).
+- Tags, notes and ownership on assets, anchored on the durable asset (F-032, Phase 2–3).
+- Export of any filtered view to CSV/JSON/report (F-023, Phase 5).
+
+### Great — the platform vision
+
+- Vulnerability triage queue ranked by exploitability, not severity — KEV badges, "fix-this-first" sort, composite per-host risk; the operational tiers are KEV → 24h, EPSS > 0.5 + CVSS > 7 → 7 days, else normal (F-015, C-002, Phase 3). The single feature that most elevates the tool.
+- Time-travel — a timeline scrubber to view the estate's state at any past scan, and animate change over time (F-033, extends F-014, Phase 3+).
+- Live scan visualisation — hosts/ports appearing on the graph as the scan runs (F-009, Phase 2+).
+- Continuous-monitoring dashboard — scheduled rescans plus an alert feed/timeline (F-018/F-019, Phase 4).
+- Per-asset risk-over-time (F-034, Phase 3+).
+- Deep-inspection panels — TLS/cert (F-016), HTTP tech (F-017), plugin findings per asset (F-020/F-021); Phases 3–4.
+- Command palette / keyboard-driven workflow (F-035, any phase).
+
+**Deliberately deferred (anti-scope-creep, per the "don't over-engineer" pitfall):** drag-and-drop customisable widget dashboards and multi-user RBAC — enterprise-SaaS shape, not a focused desktop tool. Revisit only on real user demand.
+
 <!--
 When a phase completes, set its Status to "Complete (YYYY-MM-DD)" and tick its deliverables.
 Do not delete completed phases — the historical sequence is itself documentation.

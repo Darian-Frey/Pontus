@@ -6,7 +6,7 @@ Pontus is a GUI-native network scanner and asset-inventory platform — a modern
 
 ## Current state
 
-- `docs/VISION.md`: complete. Problem, differentiation, design principles, non-goals, `C-NNN` claims register (C-001–C-005), `F-NNN` feature register (F-001–F-028).
+- `docs/VISION.md`: complete. Problem, differentiation, design principles, non-goals, `C-NNN` claims register (C-001–C-005), `F-NNN` feature register (F-001–F-035; F-029–F-035 are the GUI interface features).
 - `docs/ARCHITECTURE.md`: complete. Three-tier design, hybrid scan pipeline, asset/observation data model, invariants, `D-NNN` decision register (D-001–D-007; D-005 superseded by D-006).
 - `docs/ROADMAP.md`: complete. Five phases mapping to the feature register.
 - `README.md`: complete. Status header, intended quick-start/structure, documentation map.

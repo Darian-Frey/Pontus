@@ -188,6 +188,34 @@ Tag assets with ASN, geo, WHOIS and cloud-provider data. **Acceptance:** a publi
 **Priority:** Should · **Status:** Not started
 Tested Windows build of core + GUI. **Acceptance:** core and GUI build and pass the smoke suite on Windows.
 
+### F-029 Inventory search & filtering
+**Priority:** Must · **Status:** Not started
+Free-text search and column filters over the asset inventory (identity, IP, hostname, service/port, up/down). The workhorse interaction of an asset-centric GUI. **Acceptance:** typing a term narrows the table live; filtering by an open port shows only the hosts exposing it.
+
+### F-030 Saved views / smart filters
+**Priority:** Should · **Status:** Not started
+Named, reusable filter sets layered on F-029 — e.g. "port 22 open", "new since baseline", "SNMP-exposed". **Acceptance:** a user composes a filter, saves it, and reapplies it across sessions.
+
+### F-031 Overview dashboard
+**Priority:** Should · **Status:** Not started
+A breadth-first summary home: total assets, up/down, new-since-baseline, most-exposed services, recent drift. **Acceptance:** the dashboard reflects the current store and each figure drills through to the corresponding filtered inventory view.
+
+### F-032 Asset tags, notes & ownership
+**Priority:** Should · **Status:** Not started
+Single-user annotations — tags, free-text notes and an owner — attached to durable assets (distinct from the multi-user/RBAC candidate below). **Acceptance:** a tag/note/owner set on an asset persists across scans and restarts and is filterable.
+
+### F-033 Time-travel view
+**Priority:** Should · **Status:** Not started
+A timeline control to view the estate's state at any past scan and step or animate change over time; the visual face of the observation history (extends F-014). **Acceptance:** scrubbing to an earlier scan shows the inventory and each host's state as observed at that point.
+
+### F-034 Per-asset risk timeline
+**Priority:** Could · **Status:** Not started
+Per-asset history of exposure and risk (open services, CVE/risk score from F-015) charted across scans. **Acceptance:** an asset's detail view shows how its composite risk score changed between scans.
+
+### F-035 Command palette / keyboard workflow
+**Priority:** Could · **Status:** Not started
+A keyboard-driven command palette for navigation and actions (run a scan, apply a filter, jump to an asset) for power users. **Acceptance:** the common actions are reachable from the palette without the mouse.
+
 ## Candidate features (uncommitted)
 
 - Passive recon ingestion (certificate-transparency logs, Shodan/Censys via user API keys)
