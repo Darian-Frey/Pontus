@@ -35,7 +35,7 @@ Phases group features from [VISION.md](VISION.md). The ordering reflects D-006 (
 - [x] `gui/`: Qt6 shell — asset table + detail pane as the home screen (filterable inventory + per-asset observation history over the FFI; scan launched from the CLI for now)
 - [ ] `gui/`: live force-directed topology graph from traceroute hop data
 - [~] `gui/`: scan profiles + GUI command builder (New-scan dialog with mandatory scope, TCP/UDP ports and live output, shelling out to the CLI per D-008; saveable profiles still to add)
-- [ ] `gui/`: subnet service/port heatmap
+- [x] `gui/`: subnet service/port heatmap (host × open-service grid, columns ordered most-shared first so shared exposure forms vertical bands)
 
 **Acceptance:** inventory persists across restarts; a scan launched from the GUI updates the table and the live topology graph; a saved profile round-trips (compose → save → reuse → run) entirely in the GUI.
 

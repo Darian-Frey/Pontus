@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "diffdialog.h"
+#include "heatmapdialog.h"
 #include "scandialog.h"
 
 #include <QAction>
@@ -84,6 +85,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     QAction* diffAct = viewMenu->addAction(QStringLiteral("&Drift / diff…"));
     diffAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+D")));
     connect(diffAct, &QAction::triggered, this, &MainWindow::onDiff);
+    QAction* heatmapAct = viewMenu->addAction(QStringLiteral("Service &heatmap…"));
+    heatmapAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+H")));
+    connect(heatmapAct, &QAction::triggered, this, &MainWindow::onHeatmap);
 
     // Left: filter box over the asset table (the F-029 workhorse, first cut).
     filter_ = new QLineEdit;
@@ -182,6 +186,15 @@ void MainWindow::onDiff() {
         return;
     }
     DiffDialog dialog(&client_, this);
+    dialog.exec();
+}
+
+void MainWindow::onHeatmap() {
+    if (!client_.isOpen()) {
+        statusBar()->showMessage(QStringLiteral("Open a database first."));
+        return;
+    }
+    HeatmapDialog dialog(&client_, this);
     dialog.exec();
 }
 
