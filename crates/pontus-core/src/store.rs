@@ -65,6 +65,14 @@ CREATE TRIGGER IF NOT EXISTS observations_no_update
 CREATE TRIGGER IF NOT EXISTS observations_no_delete
     BEFORE DELETE ON observations
     BEGIN SELECT RAISE(ABORT, 'observations are append-only'); END;
+
+-- Topology edges from traceroute (F-009): src is one hop before dst on a path.
+CREATE TABLE IF NOT EXISTS edges (
+    scan_id INTEGER NOT NULL REFERENCES scans(id),
+    src     TEXT NOT NULL,
+    dst     TEXT NOT NULL,
+    UNIQUE (scan_id, src, dst)
+);
 "#;
 
 /// A scan's audit record, for listing and diff headers.
@@ -74,6 +82,13 @@ pub struct ScanRef {
     pub started_at: String,
     pub finished_at: Option<String>,
     pub targets: String,
+}
+
+/// A directed topology edge: `from` is one hop before `to` on a traced path (F-009).
+#[derive(Debug, Clone, Serialize)]
+pub struct Edge {
+    pub from: String,
+    pub to: String,
 }
 
 /// One observation in an asset's history, for the GUI detail pane.
@@ -232,6 +247,22 @@ impl Store {
                 },
             )
             .optional()?)
+    }
+
+    /// Record a topology edge for a scan (idempotent per scan, F-009).
+    pub fn record_edge(&self, scan_id: i64, from: &str, to: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO edges (scan_id, src, dst) VALUES (?1, ?2, ?3)",
+            params![scan_id, from, to],
+        )?;
+        Ok(())
+    }
+
+    /// The topology edges recorded by a scan.
+    pub fn edges_for_scan(&self, scan_id: i64) -> Result<Vec<Edge>> {
+        let mut stmt = self.conn.prepare("SELECT src, dst FROM edges WHERE scan_id = ?1")?;
+        let rows = stmt.query_map([scan_id], |r| Ok(Edge { from: r.get(0)?, to: r.get(1)? }))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     /// Designate `scan_id` as the baseline this store diffs against (F-014).

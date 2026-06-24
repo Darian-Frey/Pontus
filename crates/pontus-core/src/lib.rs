@@ -16,6 +16,7 @@ pub mod rdns;
 pub mod scan;
 pub mod scope;
 pub mod store;
+pub mod traceroute;
 
 pub use diff::{HostDiff, HostStatus, PortRef, diff_observations};
 pub use discovery::{DiscoveredHost, DiscoveryError, Method};
@@ -23,7 +24,7 @@ pub use scan::{HostPorts, OpenPort, ScanConfig, scan_hosts};
 pub use error::{Error, Result};
 pub use model::{IdentityKind, IdentitySignals, ObservationState, PortObservation};
 pub use scope::{Scope, ScopeError};
-pub use store::{AssetObservation, AssetSummary, HostObservation, ScanRef, Store};
+pub use store::{AssetObservation, AssetSummary, Edge, HostObservation, ScanRef, Store};
 
 #[cfg(test)]
 mod tests;

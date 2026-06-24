@@ -44,6 +44,9 @@ char *pontus_asset_history_json(PontusHandle *handle, long long asset_id);
 /* JSON array of per-host changes between two scans. Caller frees. */
 char *pontus_diff_json(PontusHandle *handle, long long from_scan, long long to_scan);
 
+/* JSON array of topology edges for a scan: [{"from":"..","to":".."}, ..]. Caller frees. */
+char *pontus_topology_json(PontusHandle *handle, long long scan_id);
+
 /* Designate a scan as the baseline to diff against. Returns true on success. */
 bool pontus_set_baseline(PontusHandle *handle, long long scan_id);
 

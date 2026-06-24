@@ -135,6 +135,18 @@ fn baseline_round_trips() {
 }
 
 #[test]
+fn topology_edges_round_trip_and_dedup() {
+    let store = Store::open_in_memory().unwrap();
+    let s = store.begin_scan("t", "s", None).unwrap();
+    store.record_edge(s, "192.168.1.2", "192.168.1.1").unwrap();
+    store.record_edge(s, "192.168.1.1", "8.8.8.8").unwrap();
+    store.record_edge(s, "192.168.1.2", "192.168.1.1").unwrap(); // duplicate
+    let edges = store.edges_for_scan(s).unwrap();
+    assert_eq!(edges.len(), 2, "duplicate edge ignored");
+    assert!(edges.iter().any(|e| e.from == "192.168.1.1" && e.to == "8.8.8.8"));
+}
+
+#[test]
 fn observations_are_append_only() {
     let store = Store::open_in_memory().unwrap();
     let s = store.begin_scan("t", "s", None).unwrap();

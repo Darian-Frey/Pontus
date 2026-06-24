@@ -7,6 +7,7 @@ use ipnet::IpNet;
 use pontus_core::discovery::{self, DiscoveredHost, Method};
 use pontus_core::scan::udp::{self, UdpConfig, UdpState};
 use pontus_core::scan::{OpenPort, ScanConfig, scan_hosts};
+use pontus_core::traceroute;
 use pontus_core::{IdentitySignals, ObservationState, PortObservation, Scope, Store};
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr, TcpStream};
@@ -81,6 +82,15 @@ struct ScanArgs {
     /// Skip reverse-DNS resolution of discovered hosts.
     #[arg(long)]
     no_rdns: bool,
+    /// Skip the traceroute / topology pass.
+    #[arg(long)]
+    no_traceroute: bool,
+    /// Maximum traceroute hops per host.
+    #[arg(long, default_value_t = 30)]
+    max_hops: u8,
+    /// Per-hop traceroute wait, milliseconds.
+    #[arg(long, default_value_t = 500)]
+    trace_timeout_ms: u64,
     /// UDP ports to scan on each live host (off by default). Reports open and
     /// open|filtered; closed ports (ICMP-unreachable) are omitted.
     #[arg(long, value_name = "PORTS")]
@@ -238,10 +248,45 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Topology pass: traceroute each live host and record path edges (F-009).
+    let mut edges = 0u64;
+    if !args.no_traceroute {
+        let trace_wait = Duration::from_millis(args.trace_timeout_ms);
+        let mut privileged = true;
+        for host in &hosts {
+            if !privileged {
+                break;
+            }
+            let scanner = traceroute::egress_source(host.ip);
+            match traceroute::trace(host.ip, args.max_hops, trace_wait).await {
+                Ok(hops) => {
+                    let mut prev = scanner;
+                    for hop in hops {
+                        if let Some(ip) = hop.ip {
+                            if let Some(p) = prev {
+                                if p != ip {
+                                    store.record_edge(scan_id, &p.to_string(), &ip.to_string())?;
+                                    edges += 1;
+                                }
+                            }
+                            prev = Some(ip);
+                        }
+                    }
+                }
+                Err(e) if e.is_privilege() => {
+                    eprintln!("note: {e}");
+                    eprintln!("      skipping topology (traceroute needs CAP_NET_RAW)");
+                    privileged = false;
+                }
+                Err(_) => {}
+            }
+        }
+    }
+
     store.finish_scan(scan_id)?;
     println!(
         "done: {up} host(s) up, {refused} target(s) refused as out-of-scope; \
-         {} asset(s), {} observation(s) total",
+         {} asset(s), {} observation(s), {edges} edge(s) total",
         store.asset_count()?,
         store.observation_count()?
     );

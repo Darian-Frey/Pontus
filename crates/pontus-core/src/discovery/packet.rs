@@ -59,6 +59,53 @@ pub fn parse_echo_reply_v4(icmp: &[u8]) -> Option<EchoReply> {
     Some(EchoReply { identifier: echo.get_identifier(), sequence: echo.get_sequence_number() })
 }
 
+/// The ICMPv4 messages traceroute reacts to (F-009): an echo reply means the probe
+/// reached the destination; a time-exceeded means a router on the path decremented
+/// the TTL to zero and reported itself. Both carry our probe's id/sequence — the
+/// echo reply directly, the time-exceeded inside the quoted original datagram — so
+/// we can match a reply to the TTL that produced it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IcmpV4Kind {
+    EchoReply { id: u16, seq: u16 },
+    TimeExceeded { id: u16, seq: u16 },
+    Other,
+}
+
+/// Parse a full datagram from a raw IPv4 ICMP socket into its source address (the
+/// responder — a router for time-exceeded, the target for an echo reply) and the
+/// message kind.
+pub fn parse_icmp_v4_message(buf: &[u8]) -> Option<(Ipv4Addr, IcmpV4Kind)> {
+    let ip = Ipv4Packet::new(buf)?;
+    if ip.get_next_level_protocol() != IpNextHeaderProtocols::Icmp {
+        return None;
+    }
+    let source = ip.get_source();
+    let icmp = IcmpPacket::new(ip.payload())?;
+    let kind = match icmp.get_icmp_type() {
+        IcmpTypes::EchoReply => {
+            let echo = echo_reply::EchoReplyPacket::new(ip.payload())?;
+            IcmpV4Kind::EchoReply { id: echo.get_identifier(), seq: echo.get_sequence_number() }
+        }
+        IcmpTypes::TimeExceeded => embedded_id_seq(icmp.payload())
+            .map(|(id, seq)| IcmpV4Kind::TimeExceeded { id, seq })
+            .unwrap_or(IcmpV4Kind::Other),
+        _ => IcmpV4Kind::Other,
+    };
+    Some((source, kind))
+}
+
+/// A time-exceeded ICMP body is 4 unused bytes followed by the IPv4 header and
+/// first 8 bytes of the datagram that expired — our echo request. Pull our id/seq
+/// back out of that quoted echo header.
+fn embedded_id_seq(time_exceeded_payload: &[u8]) -> Option<(u16, u16)> {
+    let quoted = time_exceeded_payload.get(4..)?; // skip the 4 unused bytes
+    let inner_ip = Ipv4Packet::new(quoted)?;
+    let echo = inner_ip.payload(); // original ICMP echo header (type, code, cksum, id, seq)
+    let identifier = u16::from_be_bytes([*echo.get(4)?, *echo.get(5)?]);
+    let sequence = u16::from_be_bytes([*echo.get(6)?, *echo.get(7)?]);
+    Some((identifier, sequence))
+}
+
 // ---- ICMPv6 ---------------------------------------------------------------
 
 /// Build an ICMPv6 echo request (type 128). The checksum is left zero: it depends
@@ -206,6 +253,67 @@ mod tests {
         buf[0] = 129; // EchoReply
         let parsed = parse_echo_reply_v6(&buf).unwrap();
         assert_eq!(parsed, EchoReply { identifier: 0x5566, sequence: 3 });
+    }
+
+    #[test]
+    fn time_exceeded_yields_router_and_quoted_id_seq() {
+        use pnet::packet::icmp::MutableIcmpPacket;
+        use pnet::packet::ipv4::MutableIpv4Packet;
+
+        // The original echo we "sent" (id 0x504e, seq 5 for TTL 5).
+        let mut echo = build_echo_request_v4(0x504e, 5, b"x");
+        echo[0] = 8; // ensure EchoRequest type
+
+        // Quoted datagram inside the time-exceeded body: original IP header + echo.
+        let mut quoted = vec![0u8; 20 + echo.len()];
+        {
+            let mut qip = MutableIpv4Packet::new(&mut quoted).unwrap();
+            qip.set_version(4);
+            qip.set_header_length(5);
+            qip.set_total_length((20 + echo.len()) as u16);
+            qip.set_next_level_protocol(IpNextHeaderProtocols::Icmp);
+            qip.set_payload(&echo);
+        }
+
+        // ICMP time-exceeded: type 11, 4 unused bytes, then the quoted datagram.
+        let mut icmp_buf = vec![0u8; 8 + quoted.len()];
+        {
+            let mut icmp = MutableIcmpPacket::new(&mut icmp_buf).unwrap();
+            icmp.set_icmp_type(IcmpTypes::TimeExceeded);
+            icmp.payload_mut()[4..4 + quoted.len()].copy_from_slice(&quoted);
+        }
+
+        // Outer IP from the router (192.168.1.254).
+        let mut outer = vec![0u8; 20 + icmp_buf.len()];
+        let mut oip = MutableIpv4Packet::new(&mut outer).unwrap();
+        oip.set_version(4);
+        oip.set_header_length(5);
+        oip.set_total_length((20 + icmp_buf.len()) as u16);
+        oip.set_next_level_protocol(IpNextHeaderProtocols::Icmp);
+        oip.set_source(Ipv4Addr::new(192, 168, 1, 254));
+        oip.set_payload(&icmp_buf);
+
+        let (src, kind) = parse_icmp_v4_message(&outer).unwrap();
+        assert_eq!(src, Ipv4Addr::new(192, 168, 1, 254));
+        assert_eq!(kind, IcmpV4Kind::TimeExceeded { id: 0x504e, seq: 5 });
+    }
+
+    #[test]
+    fn echo_reply_message_is_classified() {
+        use pnet::packet::ipv4::MutableIpv4Packet;
+        let mut echo = build_echo_request_v4(0x504e, 9, b"x");
+        echo[0] = 0; // EchoReply
+        let mut outer = vec![0u8; 20 + echo.len()];
+        let mut oip = MutableIpv4Packet::new(&mut outer).unwrap();
+        oip.set_version(4);
+        oip.set_header_length(5);
+        oip.set_total_length((20 + echo.len()) as u16);
+        oip.set_next_level_protocol(IpNextHeaderProtocols::Icmp);
+        oip.set_source(Ipv4Addr::new(192, 168, 1, 1));
+        oip.set_payload(&echo);
+        let (src, kind) = parse_icmp_v4_message(&outer).unwrap();
+        assert_eq!(src, Ipv4Addr::new(192, 168, 1, 1));
+        assert_eq!(kind, IcmpV4Kind::EchoReply { id: 0x504e, seq: 9 });
     }
 
     #[test]
