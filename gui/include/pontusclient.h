@@ -24,6 +24,7 @@ public:
     QJsonArray assets();
     QJsonArray scans(long long limit);
     QJsonArray assetHistory(long long assetId);
+    QJsonArray diff(long long fromScan, long long toScan);
 
 private:
     PontusHandle* handle_ = nullptr;

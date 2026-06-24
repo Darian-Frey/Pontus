@@ -20,8 +20,8 @@ Pontus is a GUI-native network scanner and asset-inventory platform — a modern
 
 ### Phase 2 progress
 
-- **Done:** `pontus-ffi` C-ABI shim (`pontus_open`/`assets_json`/`scans_json`/`asset_history_json`/`diff_json`/`string_free`; opaque handle; JSON across the boundary; hand-written `include/pontus.h`) — read surface only, D-001. `gui/` Qt6 Widgets shell (CMake, links `libpontus_ffi`): filterable asset table + per-asset observation-history detail pane (F-008), and a New-scan dialog with mandatory scope + live output that shells out to the privileged `pontus-cli` (D-008, F-010 first cut). Verified live on a reference /24.
-- **Next:** still open in Phase 2 — live topology graph (F-009), service/port heatmap (F-011), saveable scan profiles (F-010), and the drift/diff view in the GUI (renders `pontus_diff_json`, F-014). The FFI write surface is deliberately avoided so far (scan-from-GUI uses the CLI shell-out, D-008).
+- **Done:** `pontus-ffi` C-ABI shim (`pontus_open`/`assets_json`/`scans_json`/`asset_history_json`/`diff_json`/`string_free`; opaque handle; JSON across the boundary; hand-written `include/pontus.h`) — read surface only, D-001. `gui/` Qt6 Widgets shell (CMake, links `libpontus_ffi`): filterable asset table + per-asset observation-history detail pane (F-008); a New-scan dialog with mandatory scope + live output that shells out to the privileged `pontus-cli` (D-008, F-010 first cut); and a drift view (`View ▸ Drift / diff…`) comparing two scans — colour-coded new/vanished/changed hosts with opened/closed ports and IP moves, over `pontus_diff_json` (F-014 GUI side). Verified live on a reference /24.
+- **Next:** still open in Phase 2 — live topology graph (F-009), service/port heatmap (F-011), saveable scan profiles (F-010), and baseline designation (F-014). The FFI write surface is deliberately avoided so far (scan-from-GUI uses the CLI shell-out, D-008).
 
 ## Active task
 
