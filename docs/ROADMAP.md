@@ -28,10 +28,10 @@ Phases group features from [VISION.md](VISION.md). The ordering reflects D-006 (
 ## Phase 2 — GUI skeleton
 
 **Goal:** A Qt6 desktop frontend whose home is the asset inventory; scanning becomes something you *do* to the inventory you *live in*.
-**Status:** Not started
+**Status:** In progress
 **Features delivered:** F-008, F-009, F-010, F-011
 **Deliverables:**
-- [ ] `pontus-ffi`: stable C-ABI surface over `pontus-core`
+- [~] `pontus-ffi`: stable C-ABI surface over `pontus-core` (read surface — assets/scans/history/diff as JSON + C header; scan-from-GUI still to add)
 - [ ] `gui/`: Qt6 shell — asset table + detail pane as the home screen
 - [ ] `gui/`: live force-directed topology graph from traceroute hop data
 - [ ] `gui/`: scan profiles + GUI command builder (no CLI knowledge required)

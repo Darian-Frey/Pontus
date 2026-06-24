@@ -6,11 +6,12 @@
 //! the CLI `diff` renders and the GUI will reuse.
 
 use crate::store::HostObservation;
+use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A protocol/port pair — the unit ports are diffed by, so `tcp/53` and `udp/53`
 /// are distinct findings. Ordered (proto, then port) for stable output.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct PortRef {
     pub proto: String,
     pub port: u16,
@@ -23,7 +24,7 @@ impl std::fmt::Display for PortRef {
 }
 
 /// What happened to a host between the two scans.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum HostStatus {
     /// Seen in the later scan but not the earlier one.
     New,
@@ -36,7 +37,7 @@ pub enum HostStatus {
 }
 
 /// The change to one host across two scans.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct HostDiff {
     pub asset_id: i64,
     pub identity_kind: String,

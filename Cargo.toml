@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/pontus-core",
     "crates/pontus-cli",
+    "crates/pontus-ffi",
 ]
 
 [workspace.package]
