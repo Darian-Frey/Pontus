@@ -21,7 +21,8 @@ Pontus is a GUI-native network scanner and asset-inventory platform — a modern
 ### Phase 2 progress
 
 - **Done:** `pontus-ffi` C-ABI shim (`pontus_open`/`assets_json`/`scans_json`/`asset_history_json`/`diff_json`/`string_free`; opaque handle; JSON across the boundary; hand-written `include/pontus.h`) — read surface only, D-001. `gui/` Qt6 Widgets shell (CMake, links `libpontus_ffi`): filterable asset table + per-asset observation-history detail pane (F-008); a New-scan dialog with mandatory scope + live output that shells out to the privileged `pontus-cli` (D-008, F-010 first cut); and a drift view (`View ▸ Drift / diff…`) comparing two scans — colour-coded new/vanished/changed hosts with opened/closed ports and IP moves, over `pontus_diff_json` (F-014 GUI side); and a service/port heatmap (`View ▸ Service heatmap…`) — a host × open-service grid, columns ordered most-shared first so shared exposure forms vertical bands (F-011). Verified live on a reference /24 (e.g. mDNS open across 6/7 hosts, SNMP on 2).
-- **Next:** still open in Phase 2 — live topology graph (F-009), saveable scan profiles (F-010), and baseline designation (F-014). Recurring dev friction (PATH/setcap/paths) could be eased with a Makefile (offered, not yet added). The FFI write surface is deliberately avoided so far (scan-from-GUI uses the CLI shell-out, D-008).
+- **Also done:** saveable scan profiles in the New-scan dialog (QSettings, GUI-side; F-010); baseline designation (F-014) — store-level `meta` table + `set_baseline`/`baseline`, exposed over a new FFI **write** surface (`pontus_set_baseline`/`pontus_baseline`), with the drift view defaulting From to the baseline. The FFI write surface is now used for baseline metadata only; scanning still shells out to the CLI (D-008).
+- **Next:** the remaining Phase 2 piece is the live topology graph (F-009) — a core+FFI+GUI increment that needs traceroute hop collection first.
 
 ## Active task
 

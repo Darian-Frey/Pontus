@@ -18,14 +18,17 @@ public:
 
 private slots:
     void recompute();
+    void onSetBaseline();
 
 private:
     void populateScans();
+    void updateBaselineLabel();
 
     PontusClient* client_;
     QComboBox* from_ = nullptr;
     QComboBox* to_ = nullptr;
     QCheckBox* showUnchanged_ = nullptr;
+    QLabel* baselineLabel_ = nullptr;
     QTableWidget* table_ = nullptr;
     QLabel* summary_ = nullptr;
 };

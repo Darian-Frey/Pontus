@@ -14,6 +14,8 @@
 #ifndef PONTUS_H
 #define PONTUS_H
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -41,6 +43,12 @@ char *pontus_asset_history_json(PontusHandle *handle, long long asset_id);
 
 /* JSON array of per-host changes between two scans. Caller frees. */
 char *pontus_diff_json(PontusHandle *handle, long long from_scan, long long to_scan);
+
+/* Designate a scan as the baseline to diff against. Returns true on success. */
+bool pontus_set_baseline(PontusHandle *handle, long long scan_id);
+
+/* The designated baseline scan id, or -1 if none is set. */
+long long pontus_baseline(PontusHandle *handle);
 
 /* Free a string returned by this library. */
 void pontus_string_free(char *s);

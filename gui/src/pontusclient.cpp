@@ -61,3 +61,11 @@ QJsonArray PontusClient::assetHistory(long long assetId) {
 QJsonArray PontusClient::diff(long long fromScan, long long toScan) {
     return handle_ ? parseAndFree(pontus_diff_json(handle_, fromScan, toScan)) : QJsonArray{};
 }
+
+bool PontusClient::setBaseline(long long scanId) {
+    return handle_ ? pontus_set_baseline(handle_, scanId) : false;
+}
+
+long long PontusClient::baseline() {
+    return handle_ ? pontus_baseline(handle_) : -1;
+}
