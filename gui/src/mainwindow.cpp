@@ -1,7 +1,12 @@
 #include "mainwindow.h"
+#include "scandialog.h"
 
 #include <QAction>
+#include <QCoreApplication>
+#include <QDir>
 #include <QFileDialog>
+#include <QFileInfo>
+#include <QStandardPaths>
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QItemSelectionModel>
@@ -68,6 +73,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     QAction* quitAct = fileMenu->addAction(QStringLiteral("&Quit"));
     quitAct->setShortcut(QKeySequence::Quit);
     connect(quitAct, &QAction::triggered, this, &QWidget::close);
+
+    QMenu* scanMenu = menuBar()->addMenu(QStringLiteral("&Scan"));
+    QAction* newScanAct = scanMenu->addAction(QStringLiteral("&New scan…"));
+    newScanAct->setShortcut(QKeySequence::New);
+    connect(newScanAct, &QAction::triggered, this, &MainWindow::onNewScan);
 
     // Left: filter box over the asset table (the F-029 workhorse, first cut).
     filter_ = new QLineEdit;
@@ -146,6 +156,38 @@ void MainWindow::onRefresh() {
     if (client_.isOpen()) {
         reload();
     }
+}
+
+void MainWindow::onNewScan() {
+    const QString cli = findPontusCli();
+    const QString defaultDb = client_.isOpen() ? client_.dbPath() : QStringLiteral("pontus.db");
+    ScanDialog dialog(cli, defaultDb, this);
+    dialog.exec();
+    // If a scan completed, open/reload the store it wrote into.
+    const QString scanned = dialog.scannedDatabase();
+    if (!scanned.isEmpty()) {
+        openDatabase(scanned);
+    }
+}
+
+QString MainWindow::findPontusCli() const {
+    const QString fromEnv = qEnvironmentVariable("PONTUS_CLI");
+    if (!fromEnv.isEmpty() && QFileInfo(fromEnv).isExecutable()) {
+        return fromEnv;
+    }
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QStringList candidates = {
+        appDir + QStringLiteral("/pontus-cli"),                          // installed alongside
+        appDir + QStringLiteral("/../../target/debug/pontus-cli"),       // dev: gui/build → target
+        appDir + QStringLiteral("/../../target/release/pontus-cli"),
+    };
+    for (const QString& candidate : candidates) {
+        const QFileInfo info(candidate);
+        if (info.isExecutable()) {
+            return info.absoluteFilePath();
+        }
+    }
+    return QStandardPaths::findExecutable(QStringLiteral("pontus-cli"));
 }
 
 void MainWindow::onFilterChanged(const QString& text) {

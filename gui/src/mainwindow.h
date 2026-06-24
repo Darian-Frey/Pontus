@@ -25,12 +25,16 @@ public:
 private slots:
     void onOpen();
     void onRefresh();
+    void onNewScan();
     void onFilterChanged(const QString& text);
     void onSelectionChanged();
 
 private:
     void reload();
     void showHistory(long long assetId, const QString& identity);
+    // Locate a pontus-cli to drive scans (D-008): $PONTUS_CLI, then alongside the
+    // GUI / the dev target dir, then PATH. Empty if none found.
+    QString findPontusCli() const;
 
     PontusClient client_;
     QStandardItemModel* model_ = nullptr;
