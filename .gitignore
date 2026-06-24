@@ -3,3 +3,4 @@
 *.db-wal
 *.db-shm
 Cargo.lock.bak
+gui/build/

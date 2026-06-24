@@ -32,7 +32,7 @@ Phases group features from [VISION.md](VISION.md). The ordering reflects D-006 (
 **Features delivered:** F-008, F-009, F-010, F-011
 **Deliverables:**
 - [~] `pontus-ffi`: stable C-ABI surface over `pontus-core` (read surface — assets/scans/history/diff as JSON + C header; scan-from-GUI still to add)
-- [ ] `gui/`: Qt6 shell — asset table + detail pane as the home screen
+- [x] `gui/`: Qt6 shell — asset table + detail pane as the home screen (filterable inventory + per-asset observation history over the FFI; scan launched from the CLI for now)
 - [ ] `gui/`: live force-directed topology graph from traceroute hop data
 - [ ] `gui/`: scan profiles + GUI command builder (no CLI knowledge required)
 - [ ] `gui/`: subnet service/port heatmap
