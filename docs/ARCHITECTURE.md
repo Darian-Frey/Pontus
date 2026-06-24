@@ -231,3 +231,24 @@ Status vocabulary: Proposed | Accepted | Superseded by D-NNN | Deprecated.
 **Consequences.** Drift/baseline/time-travel become straightforward queries; CVEs/tags/ownership hang off durable assets. Cost: an identity-resolution step on every scan and entity/observation indirection on reads.
 
 **Reversal conditions.** If profiling shows the entity/observation indirection imposes unacceptable overhead for the dominant "single ad-hoc scan, no history" use case, add a lightweight stateless scan path that bypasses the asset store — without demoting the inventory as the default model.
+
+---
+
+### D-008 GUI shells out to the CLI for privileged scans
+
+**Decided:** 2026-06-24 · **Recorded:** 2026-06-24
+**Status:** Accepted
+**Authors:** Shane Hartley (architect); Claude (review)
+**Related:** D-001, D-006, F-007, F-010
+
+**Context.** Raw-socket discovery and the SYN sweep need `CAP_NET_RAW`. The GUI needs to launch scans, but giving a large Qt/C++ binary raw-socket privilege widens the attack surface considerably, and the core scan path is async (Tokio) — calling it across the C-ABI would mean exposing and threading an async surface to keep the UI loop free.
+
+**Options.**
+- **A. In-process via `pontus-ffi`.** Add `pontus_scan()` and run the pipeline inside the GUI on a worker thread. Requires the GUI binary itself to hold `CAP_NET_RAW` (or run elevated); adds an async-over-C-ABI surface.
+- **B. Shell out to the privileged `pontus-cli`.** The GUI spawns the `setcap`'d CLI as a subprocess writing the same store, streams its stdout for progress, and reloads the inventory on exit. *Chosen.*
+
+**Decision.** The GUI runs scans by spawning `pontus-cli scan … --db <the open store>` as a child process. Raw-socket privilege stays confined to the small, audited CLI; the GUI holds no special privilege. The CLI's existing unprivileged TCP-connect fallback means scans still run (degraded) when the capability is absent.
+
+**Consequences.** Privilege is isolated to one binary; the UI never blocks (separate process); the GUI reuses the exact, already-validated CLI scan path; and it works cross-platform (each OS elevates the CLI its own way) without elevating the GUI. Cost: the GUI must locate a compatible `pontus-cli`, and progress is parsed from CLI output rather than a structured API. Scope enforcement (F-007) is unaffected — it lives in the core the CLI drives, and the scan dialog surfaces the mandatory scope field.
+
+**Reversal conditions.** If the GUI and CLI must ship as a single self-contained binary (e.g. a packaging or Windows-distribution constraint where a separate elevated helper is impractical), or progress/cancellation needs richer structured control than parsed output allows, revisit by exposing a scan surface over `pontus-ffi` — keeping privilege isolation via a separate elevated helper process rather than elevating the GUI itself.

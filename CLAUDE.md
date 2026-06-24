@@ -16,11 +16,16 @@ Pontus is a GUI-native network scanner and asset-inventory platform — a modern
 ### Phase 1 progress
 
 - **Done:** workspace scaffold; `pontus-core` `assets`/`observations`/`scans` schema with trigger-enforced append-only observations (F-003); identity resolution MAC → host-key → hostname → IP with promotion (F-004); unconditional scope enforcement + audit log (F-007); native host discovery — ARP + ICMP echo over IPv4/IPv6 with privilege fallback (F-001); hybrid scan pipeline — stateless SYN sweep → stateful connect/banner deep pass, shared raw-socket plumbing in `raw.rs` (F-002); scan diff — headless `diff::diff_observations` comparing two scans by `asset_id` (F-014 first cut); `pontus-cli` scan/assets/diff (F-005). Validated live on a reference /24: 7 hosts → 7 durable assets, stable across three re-scans; port scan of a reference host is an exact match with `nmap -sS`; drift surfaces opened/closed ports against a stable asset.
-- **Next:** Phase 1 deliverables all addressed (44-test suite). rDNS fills the hostname tier (`rdns::reverse_lookup`, `--no-rdns`); UDP scanning via connected sockets (`scan::udp`, open/closed/open|filtered, `--udp-ports`) with clean-room protocol payloads (`scan::udp_probes`: DNS/NTP/SNMP/SSDP/mDNS, C-001); diff is proto-aware (`PortRef`, so `tcp/53` ≠ `udp/53`). The stateless sweep is now batched for wide ranges (`raw::BatchSender`, per-/24 source cache, set-based reply matching) — the "/16 in seconds" path. Validated live: router DNS/NTP/UPnP and host mDNS confirmed open with data. Phase 1 is functionally complete; next is Phase 2 (GUI + `pontus-ffi`) — a toolchain jump (Qt/C++ alongside Rust).
+- **Refinements (all done):** rDNS fills the hostname tier (`rdns::reverse_lookup`, `--no-rdns`); UDP scanning via connected sockets (`scan::udp`, open/closed/open|filtered, `--udp-ports`) with clean-room protocol payloads (`scan::udp_probes`: DNS/NTP/SNMP/SSDP/mDNS, C-001); diff is proto-aware (`PortRef`, so `tcp/53` ≠ `udp/53`); the stateless sweep is batched for wide ranges (`raw::BatchSender`, per-/24 source cache). Validated live: router DNS/NTP/UPnP and host mDNS confirmed open with data.
+
+### Phase 2 progress
+
+- **Done:** `pontus-ffi` C-ABI shim (`pontus_open`/`assets_json`/`scans_json`/`asset_history_json`/`diff_json`/`string_free`; opaque handle; JSON across the boundary; hand-written `include/pontus.h`) — read surface only, D-001. `gui/` Qt6 Widgets shell (CMake, links `libpontus_ffi`): filterable asset table + per-asset observation-history detail pane (F-008), and a New-scan dialog with mandatory scope + live output that shells out to the privileged `pontus-cli` (D-008, F-010 first cut). Verified live on a reference /24.
+- **Next:** still open in Phase 2 — live topology graph (F-009), service/port heatmap (F-011), saveable scan profiles (F-010), and the drift/diff view in the GUI (renders `pontus_diff_json`, F-014). The FFI write surface is deliberately avoided so far (scan-from-GUI uses the CLI shell-out, D-008).
 
 ## Active task
 
-Phase 1, Foundation — headline acceptance met (build, scope, identity/forced-IP, /24 inventory, nmap-matching port scan, drift diff). Remaining work is refinement (see "Next" above); pick per priority before moving to Phase 2.
+Phase 2, GUI skeleton — in progress. The Qt shell (inventory + detail) and GUI-driven scanning are in; next deliverables are the topology graph (F-009), heatmap (F-011), the in-GUI diff view (F-014), and saveable profiles (F-010). The core is feature-complete for Phase 1; new work is GUI-side over the `pontus-ffi` read surface plus CLI shell-out for scans.
 
 **Phase 1 acceptance (status):**
 
