@@ -13,8 +13,8 @@
 use super::tcp::{self, PortReply};
 use super::{HostPorts, OpenPort, ScanError};
 use crate::discovery::DiscoveryError;
-use crate::raw::{raw_socket, recv, recv_from, send_to};
-use socket2::{Domain, Protocol};
+use crate::raw::{BatchSender, raw_socket, recv, recv_from};
+use socket2::{Domain, Protocol, SockAddr};
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::mem::MaybeUninit;
@@ -59,33 +59,63 @@ pub async fn sweep(ips: &[IpAddr], ports: &[u16], wait: Duration) -> Result<Vec<
         .collect())
 }
 
+/// Receive buffer for the sweep socket. SYN-ACKs arrive while we are still
+/// sending, so a generous buffer cuts reply loss on a wide sweep.
+const SWEEP_RCVBUF: usize = 8 << 20; // 8 MiB
+
 async fn sweep_v4(
     targets: &[Ipv4Addr],
     ports: &[u16],
     wait: Duration,
 ) -> Result<Vec<(Ipv4Addr, u16)>, ScanError> {
-    let afd = AsyncFd::new(raw_socket(Domain::IPV4, Protocol::TCP)?)?;
-    let want: HashSet<(Ipv4Addr, u16)> = product_v4(targets, ports);
+    let sock = raw_socket(Domain::IPV4, Protocol::TCP)?;
+    let _ = sock.set_recv_buffer_size(SWEEP_RCVBUF);
+    let afd = AsyncFd::new(sock)?;
 
-    for &dst in targets {
-        let src = egress_source_v4(dst).map_err(DiscoveryError::Io)?;
-        for &port in ports {
-            let pkt = tcp::build_syn_v4(src, dst, SRC_PORT, port, SEQ);
-            send_to(&afd, &pkt, SocketAddr::new(IpAddr::V4(dst), 0)).await?;
+    // Send phase — batched, with the source address cached per /24 so a /16 costs
+    // ~256 route lookups, not 65k.
+    {
+        let mut sender = BatchSender::new(&afd);
+        let mut src_cache: HashMap<u32, Ipv4Addr> = HashMap::new();
+        for &dst in targets {
+            let key = u32::from(dst) & 0xFFFF_FF00;
+            let src = match src_cache.get(&key) {
+                Some(s) => *s,
+                None => {
+                    let s = egress_source_v4(dst).map_err(DiscoveryError::Io)?;
+                    src_cache.insert(key, s);
+                    s
+                }
+            };
+            let addr = SockAddr::from(SocketAddr::new(IpAddr::V4(dst), 0));
+            for &port in ports {
+                let pkt = tcp::build_syn_v4(src, dst, SRC_PORT, port, SEQ);
+                sender.send(&pkt, &addr).await?;
+            }
         }
     }
+
+    // Receive phase — match by membership in the target/port sets rather than a
+    // full hosts×ports product set (which would be huge for a wide sweep).
+    let target_set: HashSet<Ipv4Addr> = targets.iter().copied().collect();
+    let port_set: HashSet<u16> = ports.iter().copied().collect();
+    let expected = targets.len() * ports.len();
 
     let mut open = Vec::new();
     let mut seen: HashSet<(Ipv4Addr, u16)> = HashSet::new();
     let deadline = Instant::now() + wait;
     let mut buf = [MaybeUninit::<u8>::uninit(); 1500];
 
-    while Instant::now() < deadline && seen.len() < want.len() {
+    while Instant::now() < deadline && seen.len() < expected {
         let Some(data) = recv(&afd, &mut buf, deadline).await? else { break };
         if let Some((src_ip, reply)) = tcp::parse_tcp_reply_v4(data) {
-            if reply.dst_port == SRC_PORT && reply.reply == PortReply::Open {
+            if reply.dst_port == SRC_PORT
+                && reply.reply == PortReply::Open
+                && target_set.contains(&src_ip)
+                && port_set.contains(&reply.src_port)
+            {
                 let key = (src_ip, reply.src_port);
-                if want.contains(&key) && seen.insert(key) {
+                if seen.insert(key) {
                     open.push(key);
                 }
             }
@@ -99,45 +129,59 @@ async fn sweep_v6(
     ports: &[u16],
     wait: Duration,
 ) -> Result<Vec<(Ipv6Addr, u16)>, ScanError> {
-    let afd = AsyncFd::new(raw_socket(Domain::IPV6, Protocol::TCP)?)?;
-    let want: HashSet<(Ipv6Addr, u16)> = product_v6(targets, ports);
+    let sock = raw_socket(Domain::IPV6, Protocol::TCP)?;
+    let _ = sock.set_recv_buffer_size(SWEEP_RCVBUF);
+    let afd = AsyncFd::new(sock)?;
 
-    for &dst in targets {
-        let src = egress_source_v6(dst).map_err(DiscoveryError::Io)?;
-        for &port in ports {
-            let pkt = tcp::build_syn_v6(src, dst, SRC_PORT, port, SEQ);
-            send_to(&afd, &pkt, SocketAddr::new(IpAddr::V6(dst), 0)).await?;
+    // Send phase — batched, source cached per /64.
+    {
+        let mut sender = BatchSender::new(&afd);
+        let mut src_cache: HashMap<u128, Ipv6Addr> = HashMap::new();
+        for &dst in targets {
+            let key = u128::from(dst) & (u128::MAX << 64);
+            let src = match src_cache.get(&key) {
+                Some(s) => *s,
+                None => {
+                    let s = egress_source_v6(dst).map_err(DiscoveryError::Io)?;
+                    src_cache.insert(key, s);
+                    s
+                }
+            };
+            let addr = SockAddr::from(SocketAddr::new(IpAddr::V6(dst), 0));
+            for &port in ports {
+                let pkt = tcp::build_syn_v6(src, dst, SRC_PORT, port, SEQ);
+                sender.send(&pkt, &addr).await?;
+            }
         }
     }
+
+    let target_set: HashSet<Ipv6Addr> = targets.iter().copied().collect();
+    let port_set: HashSet<u16> = ports.iter().copied().collect();
+    let expected = targets.len() * ports.len();
 
     let mut open = Vec::new();
     let mut seen: HashSet<(Ipv6Addr, u16)> = HashSet::new();
     let deadline = Instant::now() + wait;
     let mut buf = [MaybeUninit::<u8>::uninit(); 1500];
 
-    while Instant::now() < deadline && seen.len() < want.len() {
+    while Instant::now() < deadline && seen.len() < expected {
         // The kernel strips the IPv6 header; the responder address comes from recvfrom.
         let Some((data, from)) = recv_from(&afd, &mut buf, deadline).await? else { break };
         if let Some(reply) = tcp::parse_tcp_reply_v6(data) {
             if reply.dst_port == SRC_PORT && reply.reply == PortReply::Open {
                 if let Some(sa) = from.as_socket_ipv6() {
-                    let key = (*sa.ip(), reply.src_port);
-                    if want.contains(&key) && seen.insert(key) {
-                        open.push(key);
+                    let ip = *sa.ip();
+                    if target_set.contains(&ip) && port_set.contains(&reply.src_port) {
+                        let key = (ip, reply.src_port);
+                        if seen.insert(key) {
+                            open.push(key);
+                        }
                     }
                 }
             }
         }
     }
     Ok(open)
-}
-
-fn product_v4(targets: &[Ipv4Addr], ports: &[u16]) -> HashSet<(Ipv4Addr, u16)> {
-    targets.iter().flat_map(|&ip| ports.iter().map(move |&p| (ip, p))).collect()
-}
-
-fn product_v6(targets: &[Ipv6Addr], ports: &[u16]) -> HashSet<(Ipv6Addr, u16)> {
-    targets.iter().flat_map(|&ip| ports.iter().map(move |&p| (ip, p))).collect()
 }
 
 /// Discover the source address the kernel would use to reach `dst`, by connecting a
