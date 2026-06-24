@@ -110,6 +110,15 @@ pub unsafe extern "C" fn pontus_diff_json(
     })
 }
 
+/// JSON array of topology edges for a scan (F-009): `[{"from":"…","to":"…"}, …]`.
+///
+/// # Safety
+/// `handle` must be a valid handle from [`pontus_open`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pontus_topology_json(handle: *mut PontusHandle, scan_id: i64) -> *mut c_char {
+    with_handle(handle, |h| serde_json::to_string(&h.store.edges_for_scan(scan_id).ok()?).ok())
+}
+
 /// Designate `scan_id` as the baseline this store diffs against (F-014). Returns
 /// true on success. This is a metadata write to the GUI's own store — distinct
 /// from scanning, which the GUI does by shelling out to the CLI (D-008).
@@ -197,6 +206,8 @@ mod tests {
         let s2 = store.begin_scan("192.168.1.0/24", "192.168.1.0/24", None).unwrap();
         store.record(&sig, s2, &ObservationState { up: true, ..Default::default() }).unwrap();
         store.finish_scan(s2).unwrap();
+        // A topology edge for scan 1 (F-009).
+        store.record_edge(s1, "192.168.1.50", "192.168.1.5").unwrap();
     }
 
     fn read_and_free(ptr: *mut c_char) -> String {
@@ -228,6 +239,10 @@ mod tests {
 
         let diff = read_and_free(unsafe { pontus_diff_json(handle, 1, 2) });
         assert!(diff.contains("Unchanged"), "no drift between identical scans: {diff}");
+
+        let topology = read_and_free(unsafe { pontus_topology_json(handle, 1) });
+        assert!(topology.contains("192.168.1.50") && topology.contains("192.168.1.5"),
+                "topology edge in JSON: {topology}");
 
         // Baseline write/read round-trip (F-014).
         assert_eq!(unsafe { pontus_baseline(handle) }, -1, "no baseline initially");
