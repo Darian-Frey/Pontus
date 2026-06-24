@@ -10,6 +10,7 @@ use crate::identity;
 use crate::model::{IdentitySignals, ObservationState};
 use chrono::Utc;
 use rusqlite::{Connection, OptionalExtension, params};
+use serde::Serialize;
 use std::path::Path;
 
 const SCHEMA: &str = r#"
@@ -61,12 +62,21 @@ CREATE TRIGGER IF NOT EXISTS observations_no_delete
 "#;
 
 /// A scan's audit record, for listing and diff headers.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ScanRef {
     pub id: i64,
     pub started_at: String,
     pub finished_at: Option<String>,
     pub targets: String,
+}
+
+/// One observation in an asset's history, for the GUI detail pane.
+#[derive(Debug, Clone, Serialize)]
+pub struct AssetObservation {
+    pub scan_id: i64,
+    pub observed_at: String,
+    pub ip: String,
+    pub state: ObservationState,
 }
 
 /// One host's observation within a scan, joined to its asset identity. The unit a
@@ -80,8 +90,9 @@ pub struct HostObservation {
     pub state: ObservationState,
 }
 
-/// A row of the asset table, flattened for display (the CLI `assets` command).
-#[derive(Debug, Clone)]
+/// A row of the asset table, flattened for display (the CLI `assets` command and
+/// the GUI inventory).
+#[derive(Debug, Clone, Serialize)]
 pub struct AssetSummary {
     pub id: i64,
     pub identity_kind: String,
@@ -239,6 +250,31 @@ impl Store {
             let (asset_id, identity_kind, identity_value, ip, state_json) = row?;
             let state: ObservationState = serde_json::from_str(&state_json)?;
             out.push(HostObservation { asset_id, identity_kind, identity_value, ip, state });
+        }
+        Ok(out)
+    }
+
+    /// One asset's observation history, newest first (the GUI detail pane).
+    pub fn observations_for_asset(&self, asset_id: i64) -> Result<Vec<AssetObservation>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT scan_id, observed_at, ip, state
+             FROM observations
+             WHERE asset_id = ?1
+             ORDER BY observed_at DESC",
+        )?;
+        let rows = stmt.query_map([asset_id], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (scan_id, observed_at, ip, state_json) = row?;
+            let state: ObservationState = serde_json::from_str(&state_json)?;
+            out.push(AssetObservation { scan_id, observed_at, ip, state });
         }
         Ok(out)
     }

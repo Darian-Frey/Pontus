@@ -10,7 +10,7 @@ Pontus is a GUI-native network scanner and asset-inventory platform — a modern
 - `docs/ARCHITECTURE.md`: complete. Three-tier design, hybrid scan pipeline, asset/observation data model, invariants, `D-NNN` decision register (D-001–D-007; D-005 superseded by D-006).
 - `docs/ROADMAP.md`: complete. Five phases mapping to the feature register.
 - `README.md`: complete. Status header, intended quick-start/structure, documentation map.
-- `crates/pontus-core`, `crates/pontus-cli`: exist and build (Cargo workspace). `gui/`, `plugins/`, and the other crates do not exist yet.
+- `crates/pontus-core`, `crates/pontus-cli`, `crates/pontus-ffi`: exist and build (Cargo workspace). `gui/`, `plugins/`, and the other crates do not exist yet.
 - No `CHANGELOG.md`, `BUILD.md`, `DECISIONS.md`, `FEATURES.md` as separate files yet — see "Conventions" for where those registers currently live.
 
 ### Phase 1 progress

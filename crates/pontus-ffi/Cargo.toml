@@ -1,0 +1,14 @@
+[package]
+name = "pontus-ffi"
+description = "C-ABI shim exposing pontus-core to the Qt GUI (D-001)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lib]
+# cdylib for the GUI to link against; rlib so the shim's own tests can call it.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pontus-core = { path = "../pontus-core" }
+serde_json.workspace = true
