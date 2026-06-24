@@ -27,6 +27,7 @@ add_executable(pontus-gui
     src/mainwindow.cpp
     src/scandialog.cpp
     src/diffdialog.cpp
+    src/heatmapdialog.cpp
     src/pontusclient.cpp
 )
 target_include_directories(pontus-gui PRIVATE include "${PONTUS_FFI_INCLUDE}")

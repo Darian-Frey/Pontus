@@ -1,5 +1,7 @@
 #include "scandialog.h"
 
+#include "uiutil.h"
+
 #include <QCheckBox>
 #include <QDialogButtonBox>
 #include <QFileDialog>
@@ -65,7 +67,7 @@ ScanDialog::ScanDialog(QString cliPath, const QString& defaultDb, QWidget* paren
     auto* scopeNote = new QLabel(
         QStringLiteral("Scope is enforced before any packet is sent (F-007); it cannot be disabled."));
     scopeNote->setWordWrap(true);
-    scopeNote->setStyleSheet(QStringLiteral("color: palette(mid);"));
+    applyMutedText(scopeNote);
 
     output_ = new QPlainTextEdit;
     output_->setReadOnly(true);
