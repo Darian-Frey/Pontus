@@ -4,6 +4,7 @@
 #include <QProcess>
 
 class QCheckBox;
+class QComboBox;
 class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
@@ -26,13 +27,19 @@ private slots:
     void onBrowseDb();
     void onOutput();
     void onFinished(int exitCode, QProcess::ExitStatus status);
+    void onProfileSelected(int index);
+    void onSaveProfile();
+    void onDeleteProfile();
 
 private:
     void setRunning(bool running);
+    void loadProfileNames();
 
     QString cliPath_;
     QString scannedDb_;
     QProcess* proc_ = nullptr;
+
+    QComboBox* profile_ = nullptr;
 
     QLineEdit* targets_ = nullptr;
     QLineEdit* scope_ = nullptr;

@@ -41,6 +41,11 @@ static int selftest(const QString& dbPath) {
         }
         std::cout << "  diff scan " << fromId << "->" << toId << ": " << changed
                   << " host(s) changed/new/vanished\n";
+
+        // Baseline write/read through the GUI client (F-014).
+        client.setBaseline(fromId);
+        std::cout << "  baseline set to scan " << fromId << ", read back "
+                  << client.baseline() << "\n";
     }
     return 0;
 }
@@ -52,6 +57,8 @@ int main(int argc, char** argv) {
     }
 
     QApplication app(argc, argv);
+    QApplication::setOrganizationName(QStringLiteral("Pontus"));
+    QApplication::setApplicationName(QStringLiteral("pontus-gui"));
     MainWindow window;
     // Optional positional argument: a database to open on launch.
     const QStringList args = QApplication::arguments();

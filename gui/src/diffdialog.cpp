@@ -10,6 +10,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
+#include <QPushButton>
 #include <QTableWidget>
 #include <QVBoxLayout>
 
@@ -53,12 +54,21 @@ DiffDialog::DiffDialog(PontusClient* client, QWidget* parent)
     connect(to_, &QComboBox::currentIndexChanged, this, &DiffDialog::recompute);
     connect(showUnchanged_, &QCheckBox::toggled, this, &DiffDialog::recompute);
 
+    auto* setBaseline = new QPushButton(QStringLiteral("Set From as baseline"));
+    setBaseline->setToolTip(QStringLiteral("Designate the From scan as the baseline to diff against (F-014)"));
+    connect(setBaseline, &QPushButton::clicked, this, &DiffDialog::onSetBaseline);
+    baselineLabel_ = new QLabel;
+
     auto* selectors = new QHBoxLayout;
     selectors->addWidget(new QLabel(QStringLiteral("From")));
     selectors->addWidget(from_, 1);
     selectors->addWidget(new QLabel(QStringLiteral("→  To")));
     selectors->addWidget(to_, 1);
     selectors->addWidget(showUnchanged_);
+
+    auto* baselineRow = new QHBoxLayout;
+    baselineRow->addWidget(setBaseline);
+    baselineRow->addWidget(baselineLabel_, 1);
 
     table_ = new QTableWidget;
     table_->setColumnCount(4);
@@ -75,11 +85,13 @@ DiffDialog::DiffDialog(PontusClient* client, QWidget* parent)
 
     auto* layout = new QVBoxLayout(this);
     layout->addLayout(selectors);
+    layout->addLayout(baselineRow);
     layout->addWidget(table_, 1);
     layout->addWidget(summary_);
     layout->addWidget(buttons);
 
     populateScans();
+    updateBaselineLabel();
     recompute();
 }
 
@@ -95,13 +107,38 @@ void DiffDialog::populateScans() {
         from_->addItem(label, id);
         to_->addItem(label, id);
     }
-    // Default: compare the second-newest (From) against the newest (To).
-    if (scans.size() >= 2) {
-        from_->setCurrentIndex(1);
+    // Default From to the designated baseline if one exists and is present,
+    // otherwise the second-newest scan; To is always the newest.
+    if (!scans.isEmpty()) {
         to_->setCurrentIndex(0);
+        const long long baseline = client_->baseline();
+        int fromIndex = scans.size() >= 2 ? 1 : 0;
+        if (baseline >= 0) {
+            const int found = from_->findData(static_cast<qlonglong>(baseline));
+            if (found >= 0) {
+                fromIndex = found;
+            }
+        }
+        from_->setCurrentIndex(fromIndex);
     }
     from_->blockSignals(false);
     to_->blockSignals(false);
+}
+
+void DiffDialog::onSetBaseline() {
+    if (from_->count() == 0) {
+        return;
+    }
+    const qlonglong scanId = from_->currentData().toLongLong();
+    client_->setBaseline(scanId);
+    updateBaselineLabel();
+}
+
+void DiffDialog::updateBaselineLabel() {
+    const long long baseline = client_->baseline();
+    baselineLabel_->setText(baseline >= 0
+                                ? QStringLiteral("Baseline: scan %1").arg(baseline)
+                                : QStringLiteral("Baseline: none set"));
 }
 
 void DiffDialog::recompute() {

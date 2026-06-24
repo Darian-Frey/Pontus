@@ -34,7 +34,7 @@ Phases group features from [VISION.md](VISION.md). The ordering reflects D-006 (
 - [~] `pontus-ffi`: stable C-ABI surface over `pontus-core` (read surface — assets/scans/history/diff as JSON + C header; scan-from-GUI still to add)
 - [x] `gui/`: Qt6 shell — asset table + detail pane as the home screen (filterable inventory + per-asset observation history over the FFI; scan launched from the CLI for now)
 - [ ] `gui/`: live force-directed topology graph from traceroute hop data
-- [~] `gui/`: scan profiles + GUI command builder (New-scan dialog with mandatory scope, TCP/UDP ports and live output, shelling out to the CLI per D-008; saveable profiles still to add)
+- [x] `gui/`: scan profiles + GUI command builder (New-scan dialog with mandatory scope, TCP/UDP ports and live output, shelling out to the CLI per D-008; saveable profiles persisted via QSettings)
 - [x] `gui/`: subnet service/port heatmap (host × open-service grid, columns ordered most-shared first so shared exposure forms vertical bands)
 
 **Acceptance:** inventory persists across restarts; a scan launched from the GUI updates the table and the live topology graph; a saved profile round-trips (compose → save → reuse → run) entirely in the GUI.
@@ -50,7 +50,7 @@ Phases group features from [VISION.md](VISION.md). The ordering reflects D-006 (
 - [ ] `Detector` trait with native default detector
 - [ ] Optional Nmap-backed detector (runtime shell-out to user binary, D-006)
 - [ ] Native OS fingerprinting with an updatable corpus
-- [ ] Scan diff + baseline designation + deviation view
+- [~] Scan diff + baseline designation + deviation view (all three landed early via the GUI: `diff_observations`, store-level baseline in a `meta` table, and the colour-coded drift view that defaults to the baseline)
 - [ ] CVE matching (NVD/OSV) with EPSS + CISA KEV enrichment and composite risk score
 - [ ] TLS/SSL inspection (chain, expiry, weak ciphers, SNI, CT cross-ref)
 - [ ] HTTP tech fingerprinting

@@ -122,6 +122,19 @@ fn record_without_any_signal_is_rejected() {
 // ---- Append-only observations (D-007) -------------------------------------
 
 #[test]
+fn baseline_round_trips() {
+    let store = Store::open_in_memory().unwrap();
+    assert_eq!(store.baseline().unwrap(), None, "no baseline initially");
+    let s1 = store.begin_scan("t", "s", None).unwrap();
+    let s2 = store.begin_scan("t", "s", None).unwrap();
+    store.set_baseline(s1).unwrap();
+    assert_eq!(store.baseline().unwrap(), Some(s1));
+    // Re-designating replaces, not duplicates.
+    store.set_baseline(s2).unwrap();
+    assert_eq!(store.baseline().unwrap(), Some(s2));
+}
+
+#[test]
 fn observations_are_append_only() {
     let store = Store::open_in_memory().unwrap();
     let s = store.begin_scan("t", "s", None).unwrap();

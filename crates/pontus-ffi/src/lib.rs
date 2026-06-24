@@ -110,6 +110,34 @@ pub unsafe extern "C" fn pontus_diff_json(
     })
 }
 
+/// Designate `scan_id` as the baseline this store diffs against (F-014). Returns
+/// true on success. This is a metadata write to the GUI's own store — distinct
+/// from scanning, which the GUI does by shelling out to the CLI (D-008).
+///
+/// # Safety
+/// `handle` must be a valid handle from [`pontus_open`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pontus_set_baseline(handle: *mut PontusHandle, scan_id: i64) -> bool {
+    if handle.is_null() {
+        return false;
+    }
+    let handle = unsafe { &*handle };
+    handle.store.set_baseline(scan_id).is_ok()
+}
+
+/// The designated baseline scan id, or -1 if none is set (or on error).
+///
+/// # Safety
+/// `handle` must be a valid handle from [`pontus_open`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pontus_baseline(handle: *mut PontusHandle) -> i64 {
+    if handle.is_null() {
+        return -1;
+    }
+    let handle = unsafe { &*handle };
+    handle.store.baseline().ok().flatten().unwrap_or(-1)
+}
+
 /// Free a string returned by this library.
 ///
 /// # Safety
@@ -200,6 +228,11 @@ mod tests {
 
         let diff = read_and_free(unsafe { pontus_diff_json(handle, 1, 2) });
         assert!(diff.contains("Unchanged"), "no drift between identical scans: {diff}");
+
+        // Baseline write/read round-trip (F-014).
+        assert_eq!(unsafe { pontus_baseline(handle) }, -1, "no baseline initially");
+        assert!(unsafe { pontus_set_baseline(handle, 1) });
+        assert_eq!(unsafe { pontus_baseline(handle) }, 1);
 
         unsafe { pontus_close(handle) };
         let _ = std::fs::remove_file(&path);

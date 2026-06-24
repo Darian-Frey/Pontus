@@ -26,6 +26,9 @@ public:
     QJsonArray assetHistory(long long assetId);
     QJsonArray diff(long long fromScan, long long toScan);
 
+    bool setBaseline(long long scanId);
+    long long baseline(); // -1 if none set
+
 private:
     PontusHandle* handle_ = nullptr;
     QString dbPath_;

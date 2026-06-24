@@ -38,6 +38,12 @@ CREATE TABLE IF NOT EXISTS scans (
     operator    TEXT
 );
 
+-- Store-level settings (e.g. the designated baseline scan, F-014).
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS observations (
     id          INTEGER PRIMARY KEY,
     asset_id    INTEGER NOT NULL REFERENCES assets(id),
@@ -226,6 +232,25 @@ impl Store {
                 },
             )
             .optional()?)
+    }
+
+    /// Designate `scan_id` as the baseline this store diffs against (F-014).
+    pub fn set_baseline(&self, scan_id: i64) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO meta (key, value) VALUES ('baseline', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![scan_id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// The designated baseline scan id, if one has been set.
+    pub fn baseline(&self) -> Result<Option<i64>> {
+        let value: Option<String> = self
+            .conn
+            .query_row("SELECT value FROM meta WHERE key = 'baseline'", [], |r| r.get(0))
+            .optional()?;
+        Ok(value.and_then(|v| v.parse().ok()))
     }
 
     /// Every host observation recorded by one scan, joined to its asset identity.
