@@ -17,3 +17,4 @@ socket2.workspace = true
 pnet.workspace = true
 libc.workspace = true
 roxmltree.workspace = true
+ureq.workspace = true
