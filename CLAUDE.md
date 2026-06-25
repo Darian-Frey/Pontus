@@ -25,7 +25,11 @@ Pontus is a GUI-native network scanner and asset-inventory platform — a modern
 - **Topology data layer (F-009, done):** core `traceroute` (ICMP echo with rising TTL; routers via Time Exceeded, target via Echo Reply; `parse_icmp_v4_message`), an `edges` store table (`record_edge`/`edges_for_scan`), FFI `pontus_topology_json`, and a CLI traceroute pass recording `scanner → hop → … → host` edges (`--no-traceroute`/`--max-hops`). IPv4 only (v6 hop-limit is a follow-up). Validated live: a flat /24 yields a star of edges from the scanner to ICMP-echo-responsive hosts.
 - **Tooling:** a root `Makefile` wraps the build/setcap/run loop (`make build`/`cap`/`gui`/`scan`).
 - **Topology graph (F-009, done):** a Qt `QGraphicsView` force-directed graph (`View ▸ Topology…`) rendering `pontus_topology_json` — the layout settles synchronously before drawing (no jitter), the scanner is pinned at the centre, with drag-pan and scroll-zoom. **Phase 2 is complete** (all of F-008/F-009/F-010/F-011).
-- **Next:** Phase 3 (Intelligence) — native service/version detection behind the `Detector` trait, OS fingerprinting, CVE matching with EPSS + CISA KEV triage (F-012/F-013/F-015/F-016/F-017).
+
+### Phase 3 progress
+
+- **Done:** `Detector` trait + `detect::NativeDetector` (F-012) — clean-room service/version detection (banner grammar for SSH/HTTP/FTP/SMTP/POP3/IMAP, well-known-port fallback), built from public protocol knowledge, never `nmap-service-probes` (C-001). Wired into `pontus-cli`: observations now carry structured `service`/`version` instead of a raw banner. Verified live (an SSH banner stored as `ssh` / `OpenSSH 9.6p1`).
+- **Next:** the optional Nmap-backed detector (runtime shell-out to the user's `nmap`, D-006) behind the same trait; then OS fingerprinting (F-013), and the CVE + EPSS/KEV triage that is the phase's headline (F-015, C-002).
 
 ## Active task
 

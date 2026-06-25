@@ -44,10 +44,10 @@ Phases group features from [VISION.md](VISION.md). The ordering reflects D-006 (
 ## Phase 3 — Intelligence
 
 **Goal:** Turn raw scan data into actionable signal — detection, change-tracking, and triage-grade vulnerability intelligence.
-**Status:** Not started
+**Status:** In progress
 **Features delivered:** F-012, F-013, F-014, F-015, F-016, F-017
 **Deliverables:**
-- [ ] `Detector` trait with native default detector
+- [x] `Detector` trait with native default detector (`detect::NativeDetector` — clean-room banner grammar + well-known ports, C-001; wired into the CLI so observations carry structured service/version)
 - [ ] Optional Nmap-backed detector (runtime shell-out to user binary, D-006)
 - [ ] Native OS fingerprinting with an updatable corpus
 - [~] Scan diff + baseline designation + deviation view (all three landed early via the GUI: `diff_observations`, store-level baseline in a `meta` table, and the colour-coded drift view that defaults to the baseline)

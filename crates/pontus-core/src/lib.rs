@@ -6,6 +6,7 @@
 //! resolve to durable assets, and a scan writes append-only observations against
 //! them (D-007).
 
+pub mod detect;
 pub mod diff;
 pub mod discovery;
 pub mod error;
@@ -18,6 +19,7 @@ pub mod scope;
 pub mod store;
 pub mod traceroute;
 
+pub use detect::{Detector, NativeDetector, Service};
 pub use diff::{HostDiff, HostStatus, PortRef, diff_observations};
 pub use discovery::{DiscoveredHost, DiscoveryError, Method};
 pub use scan::{HostPorts, OpenPort, ScanConfig, scan_hosts};

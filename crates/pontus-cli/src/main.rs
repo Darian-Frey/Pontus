@@ -8,7 +8,7 @@ use pontus_core::discovery::{self, DiscoveredHost, Method};
 use pontus_core::scan::udp::{self, UdpConfig, UdpState};
 use pontus_core::scan::{OpenPort, ScanConfig, scan_hosts};
 use pontus_core::traceroute;
-use pontus_core::{IdentitySignals, ObservationState, PortObservation, Scope, Store};
+use pontus_core::{Detector, IdentitySignals, NativeDetector, ObservationState, PortObservation, Scope, Store};
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::process::ExitCode;
@@ -188,20 +188,24 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         retries: args.udp_retries,
     };
 
+    let detector = NativeDetector;
     let mut up = 0u64;
     for host in &hosts {
         let open = scanned.get(&host.ip).cloned().unwrap_or_default();
         let hostname = hostnames.get(&host.ip).cloned();
 
-        // TCP open ports become observations directly; banners are interim service
-        // hints pending the Detector (Phase 3).
+        // Run the native detector over each open TCP port's banner to fill the
+        // service/version fields (F-012), rather than dumping the raw banner.
         let mut observed_ports: Vec<PortObservation> = open
             .iter()
-            .map(|p| PortObservation {
-                port: p.port,
-                proto: p.proto.to_string(),
-                service: p.banner.clone(),
-                version: None,
+            .map(|p| {
+                let service = detector.identify(p.port, p.proto, p.banner.as_deref());
+                PortObservation {
+                    port: p.port,
+                    proto: p.proto.to_string(),
+                    service: service.as_ref().map(|s| s.name.clone()),
+                    version: service.as_ref().and_then(|s| s.version_string()),
+                }
             })
             .collect();
 
