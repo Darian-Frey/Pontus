@@ -252,3 +252,25 @@ Status vocabulary: Proposed | Accepted | Superseded by D-NNN | Deprecated.
 **Consequences.** Privilege is isolated to one binary; the UI never blocks (separate process); the GUI reuses the exact, already-validated CLI scan path; and it works cross-platform (each OS elevates the CLI its own way) without elevating the GUI. Cost: the GUI must locate a compatible `pontus-cli`, and progress is parsed from CLI output rather than a structured API. Scope enforcement (F-007) is unaffected — it lives in the core the CLI drives, and the scan dialog surfaces the mandatory scope field.
 
 **Reversal conditions.** If the GUI and CLI must ship as a single self-contained binary (e.g. a packaging or Windows-distribution constraint where a separate elevated helper is impractical), or progress/cancellation needs richer structured control than parsed output allows, revisit by exposing a scan surface over `pontus-ffi` — keeping privilege isolation via a separate elevated helper process rather than elevating the GUI itself.
+
+---
+
+### D-009 Hybrid vulnerability-data delivery
+
+**Decided:** 2026-06-25 · **Recorded:** 2026-06-25
+**Status:** Accepted
+**Authors:** Shane Hartley (architect); Claude (review)
+**Related:** F-015, C-002, C-001
+
+**Context.** The intelligence layer (F-015) needs three data sources: CVE matching for a detected product/version, EPSS exploitation probabilities, and the CISA KEV catalogue. Unlike Nmap's fingerprint data (C-001), all three are freely/publicly licensed (NVD and KEV are US-government public domain; EPSS is free from FIRST; OSV is open), so caching or bundling them carries no licensing entanglement. The question is purely delivery: querying live APIs at scan time is always current but adds a hard network dependency, is subject to API rate limits, and is hard to test deterministically; bundling a full offline corpus (notably all of NVD) is self-contained but large to vendor/refresh and needs a heavier CPE-style matcher.
+
+**Options.**
+- **A. Online at scan time.** Query NVD/OSV + EPSS + KEV live per scan. Current, no vendored data; network-dependent, rate-limited, non-deterministic to test.
+- **B. Fully offline (bundled snapshots).** Cache NVD + EPSS + KEV; match locally. Deterministic and offline; large NVD dataset and a heavier matcher.
+- **C. Hybrid.** Cache the small, fast-moving feeds (KEV ~1.6k CVEs, EPSS) locally so enrichment and the risk scoring run offline and are unit-testable; query the NVD API on demand (cached) for CVE matching. *Chosen.*
+
+**Decision.** The KEV catalogue and EPSS scores are fetched (`pontus-cli intel update`) and cached locally; the C-002 risk-scoring engine and enrichment operate entirely on local data and are testable without a network. CVE matching for a product/version queries the NVD API on demand, with results cached. Feeds are fetched with a minimal blocking HTTP client (`ureq`); nothing is vendored into the repository.
+
+**Consequences.** The differentiating logic (exploitation-weighted scoring, KEV/EPSS enrichment) works offline and is deterministic to test; only CVE *matching* needs the network, and only for hosts with detected versions. Cost: a cache to manage and refresh, and NVD API rate limits to respect on the matching path.
+
+**Reversal conditions.** If NVD API availability or rate limits prove too unreliable for the matching path, move that step to a bundled/cached NVD snapshot (toward option B) while keeping the same scoring engine; if cache staleness becomes a correctness problem for KEV/EPSS, shorten the refresh interval or fetch those inline.

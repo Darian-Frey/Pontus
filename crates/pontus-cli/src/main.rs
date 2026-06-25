@@ -38,6 +38,11 @@ enum Command {
         #[arg(long, default_value = "pontus.db")]
         db: String,
     },
+    /// Manage cached vulnerability intelligence (CISA KEV, EPSS).
+    Intel {
+        #[command(subcommand)]
+        command: IntelCommand,
+    },
     /// Diff two scans: opened/closed ports, new/vanished hosts, address moves.
     Diff {
         #[arg(long, default_value = "pontus.db")]
@@ -51,6 +56,21 @@ enum Command {
         /// Also list hosts that did not change.
         #[arg(long)]
         all: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum IntelCommand {
+    /// Fetch and cache the CISA Known Exploited Vulnerabilities catalogue.
+    Update {
+        /// Cache directory (default: $XDG_CACHE_HOME/pontus or ~/.cache/pontus).
+        #[arg(long)]
+        cache: Option<String>,
+    },
+    /// Show the cached intelligence status.
+    Status {
+        #[arg(long)]
+        cache: Option<String>,
     },
 }
 
@@ -124,6 +144,7 @@ async fn main() -> ExitCode {
     let result = match cli.command {
         Command::Scan(args) => run_scan(args).await,
         Command::Assets { db } => list_assets(&db),
+        Command::Intel { command } => run_intel(command),
         Command::Diff { db, from, to, all } => run_diff(&db, from, to, all),
     };
     match result {
@@ -344,6 +365,56 @@ fn list_assets(db: &str) -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     Ok(())
+}
+
+fn run_intel(command: IntelCommand) -> Result<(), Box<dyn std::error::Error>> {
+    use pontus_core::intel::{KevCatalog, fetch_kev_json};
+    match command {
+        IntelCommand::Update { cache } => {
+            let path = kev_cache_path(cache);
+            println!("Fetching CISA KEV catalogue…");
+            let json = fetch_kev_json()?;
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&path, &json)?;
+            let catalogue = KevCatalog::from_json(&json)?;
+            println!(
+                "KEV updated: {} known-exploited CVEs cached at {}",
+                catalogue.len(),
+                path.display()
+            );
+        }
+        IntelCommand::Status { cache } => {
+            let path = kev_cache_path(cache);
+            match std::fs::read_to_string(&path) {
+                Ok(json) => {
+                    let catalogue = KevCatalog::from_json(&json)?;
+                    println!("KEV cache: {} CVEs at {}", catalogue.len(), path.display());
+                }
+                Err(_) => println!(
+                    "No KEV cache at {} — run `pontus-cli intel update`",
+                    path.display()
+                ),
+            }
+        }
+    }
+    Ok(())
+}
+
+fn kev_cache_path(cache: Option<String>) -> std::path::PathBuf {
+    let dir = cache.map(std::path::PathBuf::from).unwrap_or_else(default_cache_dir);
+    dir.join("kev.json")
+}
+
+fn default_cache_dir() -> std::path::PathBuf {
+    if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
+        return std::path::PathBuf::from(xdg).join("pontus");
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        return std::path::PathBuf::from(home).join(".cache").join("pontus");
+    }
+    std::path::PathBuf::from(".pontus-cache")
 }
 
 fn run_diff(db: &str, from: Option<i64>, to: Option<i64>, all: bool) -> Result<(), Box<dyn std::error::Error>> {

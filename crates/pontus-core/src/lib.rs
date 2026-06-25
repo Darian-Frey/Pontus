@@ -11,6 +11,7 @@ pub mod diff;
 pub mod discovery;
 pub mod error;
 pub mod identity;
+pub mod intel;
 pub mod model;
 mod raw;
 pub mod rdns;

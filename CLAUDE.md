@@ -29,7 +29,8 @@ Pontus is a GUI-native network scanner and asset-inventory platform — a modern
 ### Phase 3 progress
 
 - **Done:** service/version detection behind a host-level `Detector` trait (F-012). `detect::NativeDetector` — clean-room (banner grammar for SSH/HTTP/FTP/SMTP/POP3/IMAP + well-known-port fallback, never `nmap-service-probes`, C-001). `detect::NmapDetector` — optional shell-out to the user's own `nmap -sV`, parsing its XML via `roxmltree` (never bundled, D-006); selected with `pontus-cli --detector nmap`. Observations carry structured `service`/`version`. Verified live with both backends.
-- **Next:** OS fingerprinting (F-013), then the CVE + EPSS/KEV triage that is the phase's headline (F-015, C-002), and TLS/HTTP inspection (F-016/F-017).
+- **Intelligence core (F-015, in progress):** `intel` module with the C-002 exploitation-weighted risk model (`risk_score`/`band`/`host_risk` — KEV dominates, then EPSS, then CVSS, unit-tested), the CISA KEV catalogue (fetch/cache/query via `pontus-cli intel update`/`status`), and the EPSS parser. Hybrid data delivery (D-009): KEV/EPSS cached locally so scoring is offline + testable; NVD matching queries the API on demand. `ureq` for fetch; nothing vendored. Live-verified: fetched 1629 known-exploited CVEs. **Remaining slice:** NVD CVE matching for detected product/version, EPSS enrichment, scan wiring (services → vulns → per-host risk), and a risk-ranked view.
+- **Next:** finish F-015 (NVD matching + wiring), then OS fingerprinting (F-013) and TLS/HTTP inspection (F-016/F-017).
 
 ## Active task
 

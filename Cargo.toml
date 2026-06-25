@@ -26,3 +26,4 @@ socket2 = { version = "0.5", features = ["all"] }
 pnet = "0.35"
 libc = "0.2"
 roxmltree = "0.20"
+ureq = "2"
