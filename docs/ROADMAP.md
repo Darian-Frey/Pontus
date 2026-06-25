@@ -48,7 +48,7 @@ Phases group features from [VISION.md](VISION.md). The ordering reflects D-006 (
 **Features delivered:** F-012, F-013, F-014, F-015, F-016, F-017
 **Deliverables:**
 - [x] `Detector` trait with native default detector (`detect::NativeDetector` — clean-room banner grammar + well-known ports, C-001; wired into the CLI so observations carry structured service/version)
-- [ ] Optional Nmap-backed detector (runtime shell-out to user binary, D-006)
+- [x] Optional Nmap-backed detector (`detect::NmapDetector` shells out to the user's own `nmap -sV` and parses its XML; never bundled, D-006/C-001; `pontus-cli --detector nmap`)
 - [ ] Native OS fingerprinting with an updatable corpus
 - [~] Scan diff + baseline designation + deviation view (all three landed early via the GUI: `diff_observations`, store-level baseline in a `meta` table, and the colour-coded drift view that defaults to the baseline)
 - [ ] CVE matching (NVD/OSV) with EPSS + CISA KEV enrichment and composite risk score

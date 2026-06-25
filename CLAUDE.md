@@ -28,8 +28,8 @@ Pontus is a GUI-native network scanner and asset-inventory platform — a modern
 
 ### Phase 3 progress
 
-- **Done:** `Detector` trait + `detect::NativeDetector` (F-012) — clean-room service/version detection (banner grammar for SSH/HTTP/FTP/SMTP/POP3/IMAP, well-known-port fallback), built from public protocol knowledge, never `nmap-service-probes` (C-001). Wired into `pontus-cli`: observations now carry structured `service`/`version` instead of a raw banner. Verified live (an SSH banner stored as `ssh` / `OpenSSH 9.6p1`).
-- **Next:** the optional Nmap-backed detector (runtime shell-out to the user's `nmap`, D-006) behind the same trait; then OS fingerprinting (F-013), and the CVE + EPSS/KEV triage that is the phase's headline (F-015, C-002).
+- **Done:** service/version detection behind a host-level `Detector` trait (F-012). `detect::NativeDetector` — clean-room (banner grammar for SSH/HTTP/FTP/SMTP/POP3/IMAP + well-known-port fallback, never `nmap-service-probes`, C-001). `detect::NmapDetector` — optional shell-out to the user's own `nmap -sV`, parsing its XML via `roxmltree` (never bundled, D-006); selected with `pontus-cli --detector nmap`. Observations carry structured `service`/`version`. Verified live with both backends.
+- **Next:** OS fingerprinting (F-013), then the CVE + EPSS/KEV triage that is the phase's headline (F-015, C-002), and TLS/HTTP inspection (F-016/F-017).
 
 ## Active task
 

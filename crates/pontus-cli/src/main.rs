@@ -2,13 +2,16 @@
 //! (F-005). Everything it does goes through the headless core: scope enforcement,
 //! discovery, identity resolution and the append-only store all live there.
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use ipnet::IpNet;
 use pontus_core::discovery::{self, DiscoveredHost, Method};
 use pontus_core::scan::udp::{self, UdpConfig, UdpState};
 use pontus_core::scan::{OpenPort, ScanConfig, scan_hosts};
 use pontus_core::traceroute;
-use pontus_core::{Detector, IdentitySignals, NativeDetector, ObservationState, PortObservation, Scope, Store};
+use pontus_core::{
+    Detector, IdentitySignals, NativeDetector, NmapDetector, ObservationState, PortObservation,
+    PortProbe, Scope, Store,
+};
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::process::ExitCode;
@@ -51,6 +54,15 @@ enum Command {
     },
 }
 
+/// Which service detector to run over scan results.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum DetectorKind {
+    /// The built-in clean-room detector (banner grammar + well-known ports).
+    Native,
+    /// Shell out to the user's own installed `nmap -sV` (D-006).
+    Nmap,
+}
+
 #[derive(Parser)]
 struct ScanArgs {
     /// Target range, e.g. 192.168.1.0/24 or a single host (IPv4 or IPv6).
@@ -82,6 +94,9 @@ struct ScanArgs {
     /// Skip reverse-DNS resolution of discovered hosts.
     #[arg(long)]
     no_rdns: bool,
+    /// Service detector: the native clean-room detector, or shell out to your own nmap.
+    #[arg(long, value_enum, default_value_t = DetectorKind::Native)]
+    detector: DetectorKind,
     /// Skip the traceroute / topology pass.
     #[arg(long)]
     no_traceroute: bool,
@@ -188,23 +203,31 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         retries: args.udp_retries,
     };
 
-    let detector = NativeDetector;
+    let detector: Box<dyn Detector> = match args.detector {
+        DetectorKind::Native => Box::new(NativeDetector),
+        DetectorKind::Nmap => Box::new(NmapDetector::new()),
+    };
     let mut up = 0u64;
     for host in &hosts {
         let open = scanned.get(&host.ip).cloned().unwrap_or_default();
         let hostname = hostnames.get(&host.ip).cloned();
 
-        // Run the native detector over each open TCP port's banner to fill the
-        // service/version fields (F-012), rather than dumping the raw banner.
+        // Identify services on the open ports (F-012) so observations carry
+        // structured service/version rather than a raw banner.
+        let probes: Vec<PortProbe> = open
+            .iter()
+            .map(|p| PortProbe { port: p.port, proto: p.proto.to_string(), banner: p.banner.clone() })
+            .collect();
+        let services = detector.detect(host.ip, &probes);
         let mut observed_ports: Vec<PortObservation> = open
             .iter()
             .map(|p| {
-                let service = detector.identify(p.port, p.proto, p.banner.as_deref());
+                let service = services.get(&p.port);
                 PortObservation {
                     port: p.port,
                     proto: p.proto.to_string(),
-                    service: service.as_ref().map(|s| s.name.clone()),
-                    version: service.as_ref().and_then(|s| s.version_string()),
+                    service: service.map(|s| s.name.clone()),
+                    version: service.and_then(|s| s.version_string()),
                 }
             })
             .collect();
