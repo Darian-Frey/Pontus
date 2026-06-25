@@ -11,7 +11,7 @@ Pontus is a GUI-native network scanner and asset-inventory platform — a modern
 - `docs/ROADMAP.md`: complete. Five phases mapping to the feature register.
 - `README.md`: complete. Status header, intended quick-start/structure, documentation map.
 - `crates/pontus-core`, `crates/pontus-cli`, `crates/pontus-ffi`: exist and build (Cargo workspace). `gui/`: Qt6 shell exists and builds (CMake, links `pontus-ffi`). `plugins/` and the other crates do not exist yet.
-- No `CHANGELOG.md`, `BUILD.md`, `DECISIONS.md`, `FEATURES.md` as separate files yet — see "Conventions" for where those registers currently live.
+- `CHANGELOG.md` (Keep a Changelog) and `BUILD.md` now exist at the root. `DECISIONS.md`/`FEATURES.md` are deliberately folded into ARCHITECTURE/VISION (the documented divergence — see "Conventions"); split them only if the registers grow unwieldy.
 
 ### Phase 1 progress
 
