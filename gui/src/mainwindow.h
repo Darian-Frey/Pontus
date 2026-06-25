@@ -28,6 +28,7 @@ private slots:
     void onNewScan();
     void onDiff();
     void onHeatmap();
+    void onTopology();
     void onFilterChanged(const QString& text);
     void onSelectionChanged();
 

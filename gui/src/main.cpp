@@ -28,8 +28,15 @@ static int selftest(const QString& dbPath) {
                   << " history=" << client.assetHistory(id).size() << " observation(s)\n";
     }
 
-    // Exercise the diff path (the data side of the drift view) over the two newest scans.
+    // Topology data path (the data side of the graph view), newest scan.
     const QJsonArray scans = client.scans(10);
+    if (!scans.isEmpty()) {
+        const long long latest = scans.at(0).toObject().value("id").toInt();
+        std::cout << "  topology scan " << latest << ": " << client.topology(latest).size()
+                  << " edge(s)\n";
+    }
+
+    // Exercise the diff path (the data side of the drift view) over the two newest scans.
     if (scans.size() >= 2) {
         const long long toId = scans.at(0).toObject().value("id").toInt();
         const long long fromId = scans.at(1).toObject().value("id").toInt();
