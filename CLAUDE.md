@@ -24,7 +24,8 @@ Pontus is a GUI-native network scanner and asset-inventory platform — a modern
 - **Also done:** saveable scan profiles in the New-scan dialog (QSettings, GUI-side; F-010); baseline designation (F-014) — store-level `meta` table + `set_baseline`/`baseline`, exposed over a new FFI **write** surface (`pontus_set_baseline`/`pontus_baseline`), with the drift view defaulting From to the baseline. The FFI write surface is now used for baseline metadata only; scanning still shells out to the CLI (D-008).
 - **Topology data layer (F-009, done):** core `traceroute` (ICMP echo with rising TTL; routers via Time Exceeded, target via Echo Reply; `parse_icmp_v4_message`), an `edges` store table (`record_edge`/`edges_for_scan`), FFI `pontus_topology_json`, and a CLI traceroute pass recording `scanner → hop → … → host` edges (`--no-traceroute`/`--max-hops`). IPv4 only (v6 hop-limit is a follow-up). Validated live: a flat /24 yields a star of edges from the scanner to ICMP-echo-responsive hosts.
 - **Tooling:** a root `Makefile` wraps the build/setcap/run loop (`make build`/`cap`/`gui`/`scan`).
-- **Next:** the remaining Phase 2 piece is the GUI side of F-009 — a Qt force-directed graph rendering `pontus_topology_json`.
+- **Topology graph (F-009, done):** a Qt `QGraphicsView` force-directed graph (`View ▸ Topology…`) rendering `pontus_topology_json` — the layout settles synchronously before drawing (no jitter), the scanner is pinned at the centre, with drag-pan and scroll-zoom. **Phase 2 is complete** (all of F-008/F-009/F-010/F-011).
+- **Next:** Phase 3 (Intelligence) — native service/version detection behind the `Detector` trait, OS fingerprinting, CVE matching with EPSS + CISA KEV triage (F-012/F-013/F-015/F-016/F-017).
 
 ## Active task
 

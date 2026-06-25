@@ -2,6 +2,7 @@
 #include "diffdialog.h"
 #include "heatmapdialog.h"
 #include "scandialog.h"
+#include "topologydialog.h"
 
 #include <QAction>
 #include <QCoreApplication>
@@ -88,6 +89,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     QAction* heatmapAct = viewMenu->addAction(QStringLiteral("Service &heatmap…"));
     heatmapAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+H")));
     connect(heatmapAct, &QAction::triggered, this, &MainWindow::onHeatmap);
+    QAction* topologyAct = viewMenu->addAction(QStringLiteral("&Topology…"));
+    topologyAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+T")));
+    connect(topologyAct, &QAction::triggered, this, &MainWindow::onTopology);
 
     // Left: filter box over the asset table (the F-029 workhorse, first cut).
     filter_ = new QLineEdit;
@@ -195,6 +199,15 @@ void MainWindow::onHeatmap() {
         return;
     }
     HeatmapDialog dialog(&client_, this);
+    dialog.exec();
+}
+
+void MainWindow::onTopology() {
+    if (!client_.isOpen()) {
+        statusBar()->showMessage(QStringLiteral("Open a database first."));
+        return;
+    }
+    TopologyDialog dialog(&client_, this);
     dialog.exec();
 }
 

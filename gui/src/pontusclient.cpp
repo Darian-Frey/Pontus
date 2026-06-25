@@ -62,6 +62,10 @@ QJsonArray PontusClient::diff(long long fromScan, long long toScan) {
     return handle_ ? parseAndFree(pontus_diff_json(handle_, fromScan, toScan)) : QJsonArray{};
 }
 
+QJsonArray PontusClient::topology(long long scanId) {
+    return handle_ ? parseAndFree(pontus_topology_json(handle_, scanId)) : QJsonArray{};
+}
+
 bool PontusClient::setBaseline(long long scanId) {
     return handle_ ? pontus_set_baseline(handle_, scanId) : false;
 }

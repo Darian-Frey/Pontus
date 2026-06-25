@@ -28,12 +28,12 @@ Phases group features from [VISION.md](VISION.md). The ordering reflects D-006 (
 ## Phase 2 — GUI skeleton
 
 **Goal:** A Qt6 desktop frontend whose home is the asset inventory; scanning becomes something you *do* to the inventory you *live in*.
-**Status:** In progress
+**Status:** Complete (2026-06-25)
 **Features delivered:** F-008, F-009, F-010, F-011
 **Deliverables:**
-- [~] `pontus-ffi`: stable C-ABI surface over `pontus-core` (read surface — assets/scans/history/diff as JSON + C header; scan-from-GUI still to add)
+- [x] `pontus-ffi`: stable C-ABI surface over `pontus-core` (assets/scans/history/diff/topology as JSON, plus a baseline write, + C header; scanning is deliberately a CLI shell-out, not FFI, per D-008)
 - [x] `gui/`: Qt6 shell — asset table + detail pane as the home screen (filterable inventory + per-asset observation history over the FFI; scan launched from the CLI for now)
-- [~] `gui/`: live force-directed topology graph from traceroute hop data (data layer done — core ICMP traceroute, `edges` store table, FFI `topology_json`, CLI pass; the Qt graph view is the remaining piece)
+- [x] `gui/`: live force-directed topology graph from traceroute hop data (core ICMP traceroute → `edges` store → FFI `topology_json` → a Qt `QGraphicsView` force-directed graph, scanner pinned centre, pan/zoom)
 - [x] `gui/`: scan profiles + GUI command builder (New-scan dialog with mandatory scope, TCP/UDP ports and live output, shelling out to the CLI per D-008; saveable profiles persisted via QSettings)
 - [x] `gui/`: subnet service/port heatmap (host × open-service grid, columns ordered most-shared first so shared exposure forms vertical bands)
 
