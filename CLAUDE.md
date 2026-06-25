@@ -23,6 +23,7 @@ Pontus is a GUI-native network scanner and asset-inventory platform — a modern
 - **Done:** `pontus-ffi` C-ABI shim (`pontus_open`/`assets_json`/`scans_json`/`asset_history_json`/`diff_json`/`string_free`; opaque handle; JSON across the boundary; hand-written `include/pontus.h`) — read surface only, D-001. `gui/` Qt6 Widgets shell (CMake, links `libpontus_ffi`): filterable asset table + per-asset observation-history detail pane (F-008); a New-scan dialog with mandatory scope + live output that shells out to the privileged `pontus-cli` (D-008, F-010 first cut); and a drift view (`View ▸ Drift / diff…`) comparing two scans — colour-coded new/vanished/changed hosts with opened/closed ports and IP moves, over `pontus_diff_json` (F-014 GUI side); and a service/port heatmap (`View ▸ Service heatmap…`) — a host × open-service grid, columns ordered most-shared first so shared exposure forms vertical bands (F-011). Verified live on a reference /24 (e.g. mDNS open across 6/7 hosts, SNMP on 2).
 - **Also done:** saveable scan profiles in the New-scan dialog (QSettings, GUI-side; F-010); baseline designation (F-014) — store-level `meta` table + `set_baseline`/`baseline`, exposed over a new FFI **write** surface (`pontus_set_baseline`/`pontus_baseline`), with the drift view defaulting From to the baseline. The FFI write surface is now used for baseline metadata only; scanning still shells out to the CLI (D-008).
 - **Topology data layer (F-009, done):** core `traceroute` (ICMP echo with rising TTL; routers via Time Exceeded, target via Echo Reply; `parse_icmp_v4_message`), an `edges` store table (`record_edge`/`edges_for_scan`), FFI `pontus_topology_json`, and a CLI traceroute pass recording `scanner → hop → … → host` edges (`--no-traceroute`/`--max-hops`). IPv4 only (v6 hop-limit is a follow-up). Validated live: a flat /24 yields a star of edges from the scanner to ICMP-echo-responsive hosts.
+- **Tooling:** a root `Makefile` wraps the build/setcap/run loop (`make build`/`cap`/`gui`/`scan`).
 - **Next:** the remaining Phase 2 piece is the GUI side of F-009 — a Qt force-directed graph rendering `pontus_topology_json`.
 
 ## Active task
@@ -51,14 +52,26 @@ Full rationale in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); the load-bearing
 
 ## Build & test commands
 
+A root `Makefile` wraps the build/setcap/run loop (`make help` for the list):
+
 ```bash
-# Not yet implemented — target commands for Phase 1
-cargo build --release
-cargo test
-sudo ./target/release/pontus-cli scan 192.168.1.0/24 --scope 192.168.1.0/24
+make build        # cargo build --release + build the Qt GUI (gui/build)
+make cap          # sudo setcap cap_net_raw+ep on the release CLI (re-run after each build)
+make test         # cargo test
+make gui          # run the GUI, using the release CLI for scans
+make scan T=192.168.1.0/24 P=22,80,443 U=53,161,5353   # scope defaults to T
 ```
 
-Raw-socket scanning requires `CAP_NET_RAW` (or root); prefer granting the capability over running as root.
+Or directly:
+
+```bash
+cargo build --release && cargo test
+sudo setcap cap_net_raw+ep target/release/pontus-cli
+./target/release/pontus-cli scan 192.168.1.0/24 --scope 192.168.1.0/24
+cmake -S gui -B gui/build && cmake --build gui/build   # Qt GUI (needs Qt6 + CMake)
+```
+
+Raw-socket scanning requires `CAP_NET_RAW` (or root); prefer granting the capability over running as root. Capabilities are dropped on every rebuild, so re-run `make cap` (or the `setcap` line) after building.
 
 ## Conventions
 
