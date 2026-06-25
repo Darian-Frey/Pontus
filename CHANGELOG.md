@@ -1,0 +1,63 @@
+# Changelog
+
+All notable changes to Pontus are recorded here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
+follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reaches
+a first tagged release. Entries reference the feature (`F-NNN`), claim (`C-NNN`)
+and decision (`D-NNN`) registers in [docs/VISION.md](docs/VISION.md) and
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for traceability.
+
+## [Unreleased]
+
+No public release has been tagged yet. Phases 1 (Foundation) and 2 (GUI skeleton)
+are complete; everything below is on `main`, awaiting a first `0.1.0` tag.
+
+### Added
+
+#### Phase 1 — native engine and asset store
+
+- Cargo workspace with the headless `pontus-core` and the `pontus-cli` driver (F-005, D-001).
+- SQLite `assets`/`observations`/`scans` store; observations are append-only, enforced by triggers (F-003, D-002, D-007).
+- Host identity resolution — MAC → host key/cert → hostname → IP, with in-place promotion when a stronger signal appears (F-004, C-003).
+- Unconditional scope enforcement with no allow-all or disable path, plus a scan audit log (F-007).
+- Native host discovery — ARP and ICMP echo over IPv4 and IPv6, with an unprivileged TCP-connect fallback (F-001, D-004).
+- Hybrid port scanning — a stateless raw SYN sweep feeding a stateful connect/banner deep pass (F-002, C-005); `raw::BatchSender` and per-/24 source caching make wide ranges fast.
+- UDP scanning via connected sockets (open / closed / open|filtered), with clean-room DNS/NTP/SNMP/SSDP/mDNS probe payloads built from their RFCs, never from Nmap's corpus (F-002, C-001).
+- Reverse-DNS resolution to fill the hostname identity tier (F-004).
+- Scan diff — `diff::diff_observations` compares two scans by `asset_id`, proto-aware via `PortRef` (F-014).
+- Traceroute and a topology `edges` store — ICMP echo with rising TTL, routers via Time Exceeded (F-009).
+- Integration-test harness exercising the public API (store, identity, scope, diff, real-socket connect scan).
+
+#### Phase 2 — GUI skeleton
+
+- `pontus-ffi` C-ABI shim with a JSON read surface (assets, scans, asset history, diff, topology) plus a baseline write, and a hand-written `pontus.h` (D-001).
+- Qt6 Widgets desktop frontend: a filterable asset inventory with a per-asset observation-history detail pane as the home screen (F-008).
+- Scan-from-GUI — a New-scan dialog with a mandatory scope field and live output, run by shelling out to the privileged `pontus-cli` rather than scanning in-process (F-010, D-008).
+- Saveable scan profiles persisted in `QSettings` (F-010).
+- Drift view comparing two scans, colour-coded, with baseline designation the view defaults to (F-014).
+- Service/port heatmap — a host × open-service grid, most-shared columns first, so shared exposure forms vertical bands (F-011).
+- Force-directed topology graph (`View ▸ Topology`) rendering the traceroute edges, scanner pinned at the centre, with pan and zoom (F-009).
+
+#### Tooling and documentation
+
+- A root `Makefile` wrapping the build / `setcap` / run loop (`make build`/`cap`/`gui`/`scan`).
+- GUI interface design tiers (Minimum / Good / Great) added to the roadmap; the interface features were registered as F-029–F-035.
+
+### Changed
+
+- The scan diff keys on `(proto, port)` (`PortRef`), so `tcp/53` and `udp/53` are distinct findings.
+- The stateless SYN sweep was rebuilt around `BatchSender` with set-based reply matching to scale to wide ranges.
+
+### Fixed
+
+- Service banners no longer carry trailing dots from a stripped CRLF (`scan::stateful::sanitise`).
+- Muted note text is now theme-adaptive (`applyMutedText`) instead of `palette(mid)`, which was unreadable on dark themes.
+- The topology graph settles its layout before drawing — no on-screen jitter — and drag-to-pan / scroll-to-zoom now work.
+
+### Decisions
+
+- **D-006** — own the packet engine, make deep detection pluggable (supersedes D-005).
+- **D-007** — the asset inventory is the architectural core; scans are append-only observation events.
+- **D-008** — the GUI shells out to the privileged CLI for scans rather than holding `CAP_NET_RAW` itself.
+
+[Unreleased]: https://github.com/Darian-Frey/Pontus

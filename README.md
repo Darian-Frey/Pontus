@@ -28,7 +28,7 @@ sudo ./target/release/pontus-cli scan 192.168.1.0/24 --scope 192.168.1.0/24
 - Linux first (raw sockets via `CAP_NET_RAW`); Windows is a Phase 5 target
 - SQLite (bundled via `rusqlite`) — no external database server
 
-See [BUILD.md](BUILD.md) for detailed setup (planned; added when Phase 1 lands).
+See [BUILD.md](BUILD.md) for detailed setup (toolchain, capabilities, GUI, troubleshooting).
 
 ## Project structure
 
@@ -51,6 +51,8 @@ pontus/
 - [Vision](docs/VISION.md) — the problem, the Nmap gap, differentiation, design principles, feature register (F-NNN) and load-bearing claims (C-NNN)
 - [Architecture](docs/ARCHITECTURE.md) — three-tier structure, the asset/observation data model, invariants, and the decision register (D-NNN)
 - [Roadmap](docs/ROADMAP.md) — five-phase plan, features mapped to phases
+- [Build](BUILD.md) — toolchain, build, capabilities, running, troubleshooting
+- [Changelog](CHANGELOG.md) — version history (Keep a Changelog), referencing the registers
 - [CLAUDE.md](CLAUDE.md) — handoff for AI-assisted sessions
 
 ## License
