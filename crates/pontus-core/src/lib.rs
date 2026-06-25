@@ -19,7 +19,7 @@ pub mod scope;
 pub mod store;
 pub mod traceroute;
 
-pub use detect::{Detector, NativeDetector, Service};
+pub use detect::{Detector, NativeDetector, NmapDetector, PortProbe, Service};
 pub use diff::{HostDiff, HostStatus, PortRef, diff_observations};
 pub use discovery::{DiscoveredHost, DiscoveryError, Method};
 pub use scan::{HostPorts, OpenPort, ScanConfig, scan_hosts};
