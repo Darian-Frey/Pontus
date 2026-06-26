@@ -294,3 +294,23 @@ Status vocabulary: Proposed | Accepted | Superseded by D-NNN | Deprecated.
 **Consequences.** Bug and improvement history becomes durable, cross-referenced (to each other, to CHANGELOG, and to F-/D- entries) and forge-independent. Cost: a small standing discipline — logging discoveries rather than silently fixing them — which is especially load-bearing for the AI partner, whose default is to act inline.
 
 **Reversal conditions.** If the project adopts an external issue tracker (GitHub Issues, Jira, Linear) as its primary workflow, retire the in-repo registers in its favour; likewise if the catalogues decay into after-the-fact records (entries logged only at commit time, adding nothing over the CHANGELOG), which would mean the log-when-found discipline has lapsed and the documents are no longer earning their keep. Either retirement is itself recorded as a decision.
+
+### D-011 Passive, family-level, corpus-driven OS fingerprinting
+
+**Decided:** 2026-06-26 · **Recorded:** 2026-06-26
+**Status:** Accepted
+**Authors:** Shane Hartley (architect); Claude (proposal)
+**Related:** F-013, C-001, D-006
+
+**Context.** F-013 needs OS identification, but the licensing trap (C-001) forbids vendoring or deriving from `nmap-os-db`, and a full *active* TCP/IP stack-fingerprinting engine (Nmap's 16-probe battery — crafted flag combinations, ISN sampling, IP-ID analysis) is large and operationally heavy. The feature's own acceptance is modest: bucket a handful of reference OSes *by family*, with a corpus updatable without a rebuild. The signals needed for family-level accuracy are cheaply and *passively* available from the SYN-ACK we already capture, which is how p0f fingerprints without sending probes: the initial TTL (a public IP-stack default), the advertised TCP window and don't-fragment bit, the OS tokens a host volunteers in service banners, and — most discriminating — the **order of the TCP options** the stack emits (MSS / SACK / Timestamp / NOP / Window-scale), which differs between Linux, Windows and macOS/BSD even when their TTLs coincide.
+
+**Options.**
+- **A. Active stack fingerprinting.** A clean-room reimplementation of Nmap-style probe sequences. Most precise (can reach version level); largest to build, slowest, and the closest to the C-001 line.
+- **B. Shell out to `nmap -O`.** Mirror the D-006 detector pattern for OS detection. Accurate, no bundled data; but needs the user's Nmap and is a heavyweight dependency for a family-level guess.
+- **C. Passive signals against a clean-room corpus.** Score the SYN-ACK's TCP-option layout, initial TTL, window and DF bit, plus volunteered banner tokens, against a built-in default corpus that a user JSON file layers over. Family-level; clean-room by construction; updatable without a rebuild. *Chosen.*
+
+**Decision.** Implement OS fingerprinting as the `os` module fed by a `StackSignature` captured in the stateless sweep: the SYN-ACK's TCP-option *layout* (the order of MSS / SACK / Timestamp / NOP / Window-scale, the strongest passive discriminator), TTL, window and DF bit, plus banner tokens from the deep pass and the ICMP echo-reply TTL for portless hosts (IMP-006). These score against an `OsCorpus` whose built-in rules are first-principles (public IP-stack defaults and option orders; banner substrings matched against strings the host itself emits), never derived from `nmap-os-db` or any other fingerprint database. A `--os-corpus <path>` JSON file extends or overrides it at runtime. The guess (family, confidence, evidence) is recorded in the observation's existing `os_guess` field; confidence blends signal agreement with evidence strength so a lone TTL never reads as certainty (BUG-006).
+
+**Consequences.** Family-level OS attribution — distinguishing Linux, Windows and macOS/BSD by their stack signature, not just TTL — lands cheaply and stays clear of the licensing trap, and the corpus is community-updatable. Cost: no version-level precision; option-layout rules need occasional tuning as stacks evolve (extensible via the corpus); and IPv6 loses the TTL/DF signals (the kernel strips the IP header on a raw v6 TCP socket), though the option layout and window survive (BUG-005). The shell-out (B) and active-probe (A) paths remain available as future precision backends.
+
+**Reversal conditions.** If family-level accuracy proves insufficient and users need version-level OS identification, add either an active clean-room probe sequence (option A) or an optional `nmap -O` shell-out backend paralleling the D-006 detector (option B) — selected at runtime, never bundling `nmap-os-db`.

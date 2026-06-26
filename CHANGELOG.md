@@ -46,6 +46,7 @@ are complete and Phase 3 (Intelligence) is in progress; everything below is on
 - Vulnerability intelligence (F-015, C-002): the exploitation-weighted risk model (`intel::risk_score`/`band`, KEV → EPSS → CVSS), the CISA KEV catalogue and FIRST EPSS feeds, and NVD CVE matching by CPE applicability (`virtualMatchString`, for version-accurate results) with EPSS + KEV enrichment. Hybrid data delivery (D-009): KEV/EPSS cached locally, NVD queried on demand.
 - `pontus-cli intel update`/`status`, `scan --assess-vulns` (stores matched CVEs in a `vulns` table), and `risk` (hosts ranked fix-first).
 - GUI risk view — `View ▸ Risk / vulnerabilities…` (Ctrl+R): a master/detail triage queue over a shared `store::risk_ranked` and FFI `pontus_risk_json`, hosts worst-first with a per-host CVE breakdown (band, CVSS, EPSS, KEV badge), band-coloured (F-015).
+- Native OS fingerprinting (`os` module): a passive, p0f-style family-level guess from a `StackSignature` read off the SYN-ACK — the TCP-option layout (Linux `MSTNW` vs Windows `MNWNNS` vs macOS, the strongest discriminator), initial TTL, window and DF bit — plus volunteered service-banner tokens and the ICMP echo-reply TTL for portless hosts. Scored against a clean-room `OsCorpus` (public IP-stack option orders/TTLs + host-emitted strings, never `nmap-os-db`); confidence blends signal agreement with evidence strength so a lone TTL caps at 0.5. `pontus-cli scan` records and prints it; `--os-corpus <path>` layers a user JSON file over the defaults, updatable without a rebuild (F-013, C-001, D-011; IMP-006). An example corpus ships at `examples/os-corpus.json`.
 
 #### Tooling and documentation
 
@@ -70,5 +71,7 @@ are complete and Phase 3 (Intelligence) is in progress; everything below is on
 - **D-007** — the asset inventory is the architectural core; scans are append-only observation events.
 - **D-008** — the GUI shells out to the privileged CLI for scans rather than holding `CAP_NET_RAW` itself.
 - **D-009** — hybrid vulnerability-data delivery: cache the small KEV/EPSS feeds locally for offline, testable scoring; query the NVD API on demand for CVE matching.
+- **D-010** — adopt in-repo `BUGS.md` / `IMPROVEMENTS.md` Tier-2 registers (`BUG-NNN` / `IMP-NNN`) over an external tracker.
+- **D-011** — OS fingerprinting is passive, family-level and corpus-driven (clean-room), not active stack fingerprinting or a bundled OS database.
 
 [Unreleased]: https://github.com/Darian-Frey/Pontus

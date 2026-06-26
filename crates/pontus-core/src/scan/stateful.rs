@@ -28,7 +28,9 @@ pub async fn connect_scan(ip: IpAddr, ports: &[u16], cfg: &ScanConfig) -> HostPo
         }
     }
     open.sort_by_key(|p| p.port);
-    HostPorts { ip, open }
+    // The connect path has no raw access to the stack signature; scan_hosts
+    // backfills it from the sweep when one ran (F-013).
+    HostPorts { ip, open, stack: Default::default() }
 }
 
 async fn probe_port(ip: IpAddr, port: u16, connect_timeout: Duration, banner_wait: Duration) -> Option<OpenPort> {

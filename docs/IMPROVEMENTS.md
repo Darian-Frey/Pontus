@@ -48,7 +48,51 @@ candidate.
 - **Trade-offs.** Adds a confidence dimension to the vuln data model and the FFI/GUI surface; de-weighting risks hiding a genuinely exploited product if tuned too aggressively, so the first cut should mark, not suppress.
 - **Notes.** Addresses [BUG-002](BUGS.md). Depends on no other work.
 
+### IMP-004: Surface the OS guess in the GUI inventory
+
+- **Status:** suggested
+- **Found:** 2026-06-26, implementing F-013.
+- **Location:** [gui/src/mainwindow.cpp](../gui/src/mainwindow.cpp) (asset table + detail pane).
+- **Effort:** small
+- **Description.** `scan` now records an `os_guess` per observation, and it already flows through `pontus_asset_history_json`, but the GUI does not display it. The inventory could show an OS column and the detail pane an "OS: Linux/Unix (Ubuntu)" line.
+- **Proposal.** Read `os_guess` from the observation state in the asset history JSON; add an OS column to the asset table (most-recent observation) and a line in the detail pane.
+- **Trade-offs.** Another column competes for horizontal space in an already-wide table; mitigated by making it sortable/hideable, or showing OS only in the detail pane initially.
+- **Notes.** Pure GUI read-side work over data the store already holds (F-013, D-011). No core/FFI change needed.
+
+### IMP-005: Use the TCP window (and consider an active probe) to refine OS family
+
+- **Status:** suggested
+- **Found:** 2026-06-26, implementing F-013.
+- **Location:** [crates/pontus-core/src/os.rs](../crates/pontus-core/src/os.rs).
+- **Effort:** medium
+- **Description.** The SYN-ACK's advertised TCP window is captured (`HostPorts::tcp_window`) and supported by the corpus schema, but the built-in corpus carries no window rules — so within a TTL family (e.g. the many OSes that start at 64) the guess can't discriminate further. Common default window sizes are publicly documented and could refine the family.
+- **Proposal.** Add a small set of clean-room window rules to the built-in corpus (documented public defaults, not from `nmap-os-db`); longer term, a clean-room active probe sequence (D-011 option A) for version-level precision.
+- **Trade-offs.** Window defaults overlap across OSes and are easily changed by middleboxes/tuning, so low-weight rules risk false precision; must stay advisory. An active probe sequence is a much larger build and closer to the C-001 line — gated behind real user demand per D-011's reversal condition.
+- **Notes.** Builds on D-011. Independent of [IMP-004](#imp-004-surface-the-os-guess-in-the-gui-inventory).
+
+### IMP-007: Richer p0f-style stack features (MSS, window-scale, quirks) and corpus tuning
+
+- **Status:** suggested
+- **Found:** 2026-06-26, implementing the TCP-option-layout stack signature for F-013.
+- **Location:** [crates/pontus-core/src/scan/tcp.rs](../crates/pontus-core/src/scan/tcp.rs) (`option_layout`/`StackSignature`), [crates/pontus-core/src/os.rs](../crates/pontus-core/src/os.rs).
+- **Effort:** medium
+- **Description.** The stack signature captures the option *layout*, TTL, window and DF — but not the option *values* (MSS, window-scale factor) or p0f's "quirks" (e.g. non-zero ACK on a SYN, unusual flag/option combinations). These add discrimination, especially between Linux distributions/versions and BSD variants, and would let confidence climb higher when several features corroborate. The built-in option-layout rules also cover only the common Linux/Windows/macOS cases and will need tuning as stacks evolve.
+- **Proposal.** Extend `StackSignature`/`OsSignals`/`OsRule` with `mss`, `window_scale` and a small set of quirk flags; parse them in `option_layout` (already iterating the options) and the IP/TCP headers; grow the built-in corpus and document the signature format for community contributions. Consider shipping a larger default corpus file under `examples/` rather than only inline rules.
+- **Trade-offs.** More fields widen the data model and the corpus schema; MSS and window-scale values are influenced by path MTU and tuning, so they must be low-weight/advisory to avoid false precision. Diminishing returns versus the option layout, which already does most of the discrimination.
+- **Notes.** Extends D-011 and the option-layout work. The active-probe path (D-011 option A) remains the route to version-level precision if family-level proves insufficient.
+
 ## Applied
+
+### IMP-006: Capture the ICMP echo-reply TTL so portless hosts get an OS guess
+
+- **Status:** applied (2026-06-26)
+- **Found:** 2026-06-26, live-verifying F-013 — only the one host with open ports (the router) received a guess.
+- **Location:** [crates/pontus-core/src/discovery/packet.rs](../crates/pontus-core/src/discovery/packet.rs) (`EchoReply`), [crates/pontus-core/src/discovery/icmp.rs](../crates/pontus-core/src/discovery/icmp.rs), [crates/pontus-core/src/discovery/mod.rs](../crates/pontus-core/src/discovery/mod.rs) (`DiscoveredHost`, `merge_hosts`), [crates/pontus-cli/src/main.rs](../crates/pontus-cli/src/main.rs).
+- **Effort:** small
+- **Description.** The OS fingerprint's TTL signal was read only from the TCP SYN-ACK, so a host with no open scanned ports yielded no TTL and no guess — even when it answered ICMP echo, whose reply carries the same initial-TTL signal. On a typical subnet most hosts have no open ports, so coverage was thin.
+- **Proposal.** Read the IP-header TTL of the ICMP echo reply in the v4 discovery sweep (`EchoReply::ttl`), carry it on `DiscoveredHost`, preserve it through `merge_hosts` when an ARP hit supersedes the ICMP one, and feed it into `OsSignals` — the CLI prefers the SYN-ACK TTL and falls back to the echo TTL.
+- **Trade-offs.** Adds a field to `EchoReply`/`DiscoveredHost` and a little parsing to the ICMP path; the ARP-only path still yields no TTL (ARP has no IP header), so link-local devices that ignore ICMP remain banner-only. IPv6 still lacks the signal ([BUG-005](BUGS.md)).
+- **Notes.** Extends D-011. Regression test `icmpv4_reply_unwraps_ip_header` now asserts the TTL is captured. Independent of [IMP-004](#imp-004-surface-the-os-guess-in-the-gui-inventory) and [IMP-005](#imp-005-use-the-tcp-window-and-consider-an-active-probe-to-refine-os-family).
 
 ### IMP-001: One shared host-risk scoring path for CLI, FFI and GUI
 

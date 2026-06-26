@@ -1,0 +1,30 @@
+{
+  "_comment": "Example OS fingerprint corpus for `pontus-cli scan --os-corpus`. These rules are LAYERED OVER the built-in clean-room defaults (they do not replace them). A rule fires when every condition it specifies holds; matched rules add `weight` to their `family`, and the highest-scoring family wins. Keep entries clean-room: derive TTL/window values from public OS documentation and match `banner_substring` against strings a host volunteers — never copy from nmap-os-db (C-001).",
+  "rules": [
+    {
+      "family": "Network/Embedded",
+      "banner_substring": "dd-wrt",
+      "note": "DD-WRT",
+      "weight": 3.0
+    },
+    {
+      "family": "Network/Embedded",
+      "banner_substring": "pfsense",
+      "note": "pfSense",
+      "weight": 3.0
+    },
+    {
+      "family": "Linux/Unix",
+      "banner_substring": "synology",
+      "note": "Synology DSM",
+      "weight": 3.0
+    },
+    {
+      "family": "Windows",
+      "initial_ttl": 128,
+      "window": 65535,
+      "note": "Windows (TTL 128 + window 65535)",
+      "weight": 1.5
+    }
+  ]
+}

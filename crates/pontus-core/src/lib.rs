@@ -13,6 +13,7 @@ pub mod error;
 pub mod identity;
 pub mod intel;
 pub mod model;
+pub mod os;
 mod raw;
 pub mod rdns;
 pub mod scan;
@@ -27,6 +28,7 @@ pub use discovery::{DiscoveredHost, DiscoveryError, Method};
 pub use scan::{HostPorts, OpenPort, ScanConfig, scan_hosts};
 pub use error::{Error, Result};
 pub use model::{IdentityKind, IdentitySignals, ObservationState, PortObservation};
+pub use os::{OsCorpus, OsGuess, OsSignals, fingerprint};
 pub use scope::{Scope, ScopeError};
 pub use store::{
     AssetObservation, AssetSummary, AssetVuln, Edge, HostObservation, HostRisk, RankedVuln,

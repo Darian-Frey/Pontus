@@ -14,6 +14,10 @@ pub enum Error {
     #[error("serialisation error: {0}")]
     Json(#[from] serde_json::Error),
 
+    /// A file read failed — e.g. loading an OS fingerprint corpus (F-013).
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
     /// A vulnerability-feed fetch failed (NVD/EPSS/KEV, F-015).
     #[error("intelligence feed error: {0}")]
     Feed(String),

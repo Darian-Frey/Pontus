@@ -11,7 +11,7 @@
 //! SYN-ACKs — a harmless side effect of half-open scanning we accept for now.
 
 use super::tcp::{self, PortReply};
-use super::{HostPorts, OpenPort, ScanError};
+use super::{HostPorts, OpenPort, ScanError, StackSignature};
 use crate::discovery::DiscoveryError;
 use crate::raw::{BatchSender, raw_socket, recv, recv_from};
 use socket2::{Domain, Protocol, SockAddr};
@@ -40,21 +40,32 @@ pub async fn sweep(ips: &[IpAddr], ports: &[u16], wait: Duration) -> Result<Vec<
     }
 
     let mut found: HashMap<IpAddr, Vec<OpenPort>> = HashMap::new();
+    // Per-host stack signature from the first SYN-ACK (F-013).
+    let mut sigs: HashMap<IpAddr, StackSignature> = HashMap::new();
     if !v4.is_empty() {
-        for (ip, port) in sweep_v4(&v4, ports, wait).await? {
+        let (open, sig) = sweep_v4(&v4, ports, wait).await?;
+        for (ip, port) in open {
             found.entry(IpAddr::V4(ip)).or_default().push(OpenPort::tcp(port));
+        }
+        for (ip, s) in sig {
+            sigs.insert(IpAddr::V4(ip), s);
         }
     }
     if !v6.is_empty() {
-        for (ip, port) in sweep_v6(&v6, ports, wait).await? {
+        let (open, sig) = sweep_v6(&v6, ports, wait).await?;
+        for (ip, port) in open {
             found.entry(IpAddr::V6(ip)).or_default().push(OpenPort::tcp(port));
+        }
+        for (ip, s) in sig {
+            sigs.insert(IpAddr::V6(ip), s);
         }
     }
     Ok(found
         .into_iter()
         .map(|(ip, mut open)| {
             open.sort_by_key(|p| p.port);
-            HostPorts { ip, open }
+            let stack = sigs.get(&ip).cloned().unwrap_or_default();
+            HostPorts { ip, open, stack }
         })
         .collect())
 }
@@ -63,11 +74,9 @@ pub async fn sweep(ips: &[IpAddr], ports: &[u16], wait: Duration) -> Result<Vec<
 /// sending, so a generous buffer cuts reply loss on a wide sweep.
 const SWEEP_RCVBUF: usize = 8 << 20; // 8 MiB
 
-async fn sweep_v4(
-    targets: &[Ipv4Addr],
-    ports: &[u16],
-    wait: Duration,
-) -> Result<Vec<(Ipv4Addr, u16)>, ScanError> {
+type Sweep4 = (Vec<(Ipv4Addr, u16)>, HashMap<Ipv4Addr, StackSignature>);
+
+async fn sweep_v4(targets: &[Ipv4Addr], ports: &[u16], wait: Duration) -> Result<Sweep4, ScanError> {
     let sock = raw_socket(Domain::IPV4, Protocol::TCP)?;
     let _ = sock.set_recv_buffer_size(SWEEP_RCVBUF);
     let afd = AsyncFd::new(sock)?;
@@ -102,6 +111,7 @@ async fn sweep_v4(
     let expected = targets.len() * ports.len();
 
     let mut open = Vec::new();
+    let mut sig: HashMap<Ipv4Addr, StackSignature> = HashMap::new();
     let mut seen: HashSet<(Ipv4Addr, u16)> = HashSet::new();
     let deadline = Instant::now() + wait;
     let mut buf = [MaybeUninit::<u8>::uninit(); 1500];
@@ -117,18 +127,17 @@ async fn sweep_v4(
                 let key = (src_ip, reply.src_port);
                 if seen.insert(key) {
                     open.push(key);
+                    sig.entry(src_ip).or_insert(reply.sig);
                 }
             }
         }
     }
-    Ok(open)
+    Ok((open, sig))
 }
 
-async fn sweep_v6(
-    targets: &[Ipv6Addr],
-    ports: &[u16],
-    wait: Duration,
-) -> Result<Vec<(Ipv6Addr, u16)>, ScanError> {
+type Sweep6 = (Vec<(Ipv6Addr, u16)>, HashMap<Ipv6Addr, StackSignature>);
+
+async fn sweep_v6(targets: &[Ipv6Addr], ports: &[u16], wait: Duration) -> Result<Sweep6, ScanError> {
     let sock = raw_socket(Domain::IPV6, Protocol::TCP)?;
     let _ = sock.set_recv_buffer_size(SWEEP_RCVBUF);
     let afd = AsyncFd::new(sock)?;
@@ -160,6 +169,7 @@ async fn sweep_v6(
     let expected = targets.len() * ports.len();
 
     let mut open = Vec::new();
+    let mut sig: HashMap<Ipv6Addr, StackSignature> = HashMap::new();
     let mut seen: HashSet<(Ipv6Addr, u16)> = HashSet::new();
     let deadline = Instant::now() + wait;
     let mut buf = [MaybeUninit::<u8>::uninit(); 1500];
@@ -175,13 +185,14 @@ async fn sweep_v6(
                         let key = (ip, reply.src_port);
                         if seen.insert(key) {
                             open.push(key);
+                            sig.entry(ip).or_insert_with(|| reply.sig.clone());
                         }
                     }
                 }
             }
         }
     }
-    Ok(open)
+    Ok((open, sig))
 }
 
 /// Discover the source address the kernel would use to reach `dst`, by connecting a

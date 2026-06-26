@@ -42,11 +42,15 @@ pub struct DiscoveredHost {
     pub ip: IpAddr,
     pub mac: Option<MacAddr>,
     pub method: Method,
+    /// IPv4 echo-reply TTL, when the host answered ICMP — an OS fingerprint
+    /// signal for hosts with no open ports (F-013, IMP-006). `None` for
+    /// ARP-only or IPv6 hits.
+    pub ttl: Option<u8>,
 }
 
 impl DiscoveredHost {
     pub fn new(ip: IpAddr, mac: Option<MacAddr>, method: Method) -> Self {
-        Self { ip, mac, method }
+        Self { ip, mac, method, ttl: None }
     }
 }
 
@@ -133,9 +137,13 @@ pub fn merge_hosts(hosts: impl IntoIterator<Item = DiscoveredHost>) -> Vec<Disco
     for host in hosts {
         match out.iter_mut().find(|h| h.ip == host.ip) {
             Some(existing) => {
+                // Keep the TTL whichever record carries it (ARP has none, ICMP does),
+                // so a MAC-bearing ARP hit doesn't drop the ICMP OS signal (IMP-006).
+                let ttl = existing.ttl.or(host.ttl);
                 if existing.mac.is_none() && host.mac.is_some() {
                     *existing = host;
                 }
+                existing.ttl = ttl;
             }
             None => out.push(host),
         }
