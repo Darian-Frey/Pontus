@@ -49,11 +49,33 @@ impl OpenPort {
     }
 }
 
-/// The open ports found on one host.
+/// Passive TCP/IP-stack fingerprint signals read from a host's SYN-ACK (F-013).
+///
+/// The p0f-style discriminators: the initial TTL, the advertised window, the
+/// don't-fragment bit, and — most telling — the *order* of TCP options the stack
+/// emits (encoded one letter each: `M`SS, `S`ACK-permitted, `T`imestamp, `N`OP,
+/// `W`indow-scale, `E`OL). Different stacks order and include these differently,
+/// so the layout discriminates families that share a TTL (e.g. Linux vs macOS).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct StackSignature {
+    /// IPv4 TTL; `None` over IPv6 (the kernel strips the header) or the connect path.
+    pub ttl: Option<u8>,
+    /// Advertised TCP window.
+    pub window: Option<u16>,
+    /// IPv4 don't-fragment bit; `None` over IPv6 or the connect path.
+    pub df: Option<bool>,
+    /// TCP-option layout string, e.g. "MSTNW" (Linux) or "MNWNNS" (Windows).
+    pub opts_layout: Option<String>,
+}
+
+/// The open ports found on one host, plus the passive OS fingerprint signals
+/// captured from its SYN-ACK during the stateless sweep (F-013).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostPorts {
     pub ip: IpAddr,
     pub open: Vec<OpenPort>,
+    /// SYN-ACK stack signature, when the raw sweep ran (default on the connect path).
+    pub stack: StackSignature,
 }
 
 /// Knobs for the hybrid scan.
@@ -84,7 +106,10 @@ pub async fn scan_hosts(ips: &[IpAddr], cfg: &ScanConfig) -> Result<Vec<HostPort
             let mut out = Vec::with_capacity(candidates.len());
             for hp in candidates {
                 let ports: Vec<u16> = hp.open.iter().map(|p| p.port).collect();
-                let confirmed = stateful::connect_scan(hp.ip, &ports, cfg).await;
+                let mut confirmed = stateful::connect_scan(hp.ip, &ports, cfg).await;
+                // Carry the sweep's stack signature onto the confirmed result — the
+                // connect pass has no raw access to it (F-013).
+                confirmed.stack = hp.stack.clone();
                 if !confirmed.open.is_empty() {
                     out.push(confirmed);
                 }

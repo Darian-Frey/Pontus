@@ -49,7 +49,9 @@ pub async fn sweep_v4(targets: &[Ipv4Addr], wait: Duration) -> Result<Vec<Discov
         let Some(data) = recv(&afd, &mut buf, deadline).await? else { break };
         if let Some((src, reply)) = packet::parse_icmp_reply_v4(data) {
             if reply.identifier == ICMP_ID && want.contains(&src) && seen.insert(src) {
-                alive.push(DiscoveredHost::new(IpAddr::V4(src), None, Method::IcmpEcho));
+                let mut host = DiscoveredHost::new(IpAddr::V4(src), None, Method::IcmpEcho);
+                host.ttl = reply.ttl; // OS fingerprint signal for portless hosts (IMP-006)
+                alive.push(host);
             }
         }
     }

@@ -43,6 +43,26 @@ _None._
 - **Reproduction:** Configure the GUI once against `target/debug`, then reconfigure with `-DPONTUS_TARGET_DIR=…/target/release`; the link still resolves against the debug `.so`.
 - **Notes:** Fixed by constructing the library path directly from `PONTUS_TARGET_DIR` (with an existence check) instead of `find_library`. Recorded under CHANGELOG `### Fixed`.
 
+### BUG-006: OS fingerprint reported 100% confidence for a lone TTL signal
+
+- **Status:** fixed (2026-06-26)
+- **Found:** 2026-06-26, live-verifying F-013 — every TTL-only host on the reference /24 reported "Linux/Unix (100%)", which looked too certain.
+- **Location:** [crates/pontus-core/src/os.rs](../crates/pontus-core/src/os.rs) — `fingerprint`.
+- **Severity:** Medium — the *family* was correct (all the responders were genuinely Unix-like), but the confidence was dishonest: a single broad signal presented as certainty undermines trust in the score.
+- **Description:** Confidence was computed as the winning family's share of all matched weight. With only a TTL rule matching, that share is 1/1 = 100% — conflating "only one rule fired" with "certain", even though TTL 64 is the least discriminating signal (it only rules out Windows and old network gear).
+- **Reproduction:** Scan a host that responds with initial TTL 64 and no recognised service banner; before the fix the OS guess read "100%".
+- **Notes:** Fixed by blending _agreement_ (share of matched weight, which drops on conflicting signals) with a saturating _evidence-strength_ term, so a lone TTL match caps at 0.5 and a corroborating banner climbs higher. Regression tests `ttl_only_is_a_weak_guess_not_certainty` and `banner_pins_a_distro_and_raises_confidence_above_ttl_only`.
+
+### BUG-007: SYN probe carried no TCP options, so every host's option layout read as "M"
+
+- **Status:** fixed (2026-06-26)
+- **Found:** 2026-06-26, live-verifying F-013 — a host known to run Linux returned the option layout `M` (MSS only), the same as every other host, defeating the stack-signature discriminator.
+- **Location:** [crates/pontus-core/src/scan/tcp.rs](../crates/pontus-core/src/scan/tcp.rs) — `build_syn_v4` / `build_syn_v6`.
+- **Severity:** High (for F-013) — it silently neutered the strongest passive OS signal: the option layout looked identical for all operating systems, so nothing could be distinguished beyond TTL.
+- **Description:** SACK-permitted, Timestamp and Window-scale appear in a SYN-ACK only if the client's SYN advertised them first. The sweep's SYN was a bare 20-byte header with no options, so every responder — Linux, Windows, the router — replied with only an MSS option, and every `opts_layout` collapsed to `M`. The bug masqueraded as targets having "minimal stacks".
+- **Reproduction:** Run a service on a known-Linux host and scan it; before the fix the recorded stack signature was `opts=M` despite a full modern TCP stack.
+- **Notes:** Fixed by having `build_syn_v4`/`build_syn_v6` carry a representative option set (MSS, SACK-permitted, Timestamp, NOP, Window-scale) — the same reason nmap/p0f probes include options. Responders now echo their own option ordering. Regression test `syn_probe_carries_the_fingerprint_options`.
+
 ## Won't Fix
 
 _None._
@@ -68,3 +88,13 @@ _None._
 - **Description:** The NVD CPE and CVE APIs rate-limit anonymous clients (~5 requests / 30 s). A scan assessing many distinct products issues a request per product (deduped via the CLI's `vuln_cache`), so a large estate can be throttled, slowing assessment or dropping enrichment for some services.
 - **Reproduction:** Run `scan --assess-vulns` against a subnet with many distinct detected products and observe pacing/HTTP 403s from the NVD API.
 - **Notes:** Mitigated today by per-product caching. Candidate improvement tracked as [IMP-002](IMPROVEMENTS.md) (support an `NVD_API_KEY` for the higher rate limit, plus backoff/retry on 403/429). Consistent with D-009 (NVD queried on demand).
+
+### BUG-005: IPv6 OS fingerprinting has no TTL/hop-limit signal
+
+- **Status:** deferred
+- **Found:** 2026-06-26, implementing F-013.
+- **Location:** [crates/pontus-core/src/scan/tcp.rs](../crates/pontus-core/src/scan/tcp.rs) — `parse_tcp_reply_v6`.
+- **Severity:** Low — IPv6 OS guesses are weaker (banner-only), not wrong; IPv4 is unaffected.
+- **Description:** On a raw IPv6 TCP socket the kernel strips the IPv6 header before delivering the segment, so the SYN-ACK's hop limit is not in the receive buffer. `parse_tcp_reply_v6` therefore reports `ttl: None`, and the OS fingerprint for a v6-only host rests on volunteered banners alone — losing the initial-TTL family signal that v4 enjoys (D-011).
+- **Reproduction:** Scan an IPv6 host whose services suppress OS tokens in their banners; the recorded `os_guess` is absent even though a v4 scan of an equivalent host would bucket it by TTL.
+- **Notes:** The hop limit is recoverable via the `IPV6_RECVHOPLIMIT` socket option and `recvmsg` ancillary data, or by reading it from an `AF_PACKET` capture. Deferred — a socket-plumbing change for a secondary signal on the less-common path. Related to the IPv6 traceroute hop-limit follow-up noted for F-009.

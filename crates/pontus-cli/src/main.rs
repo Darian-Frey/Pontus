@@ -6,7 +6,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 use ipnet::IpNet;
 use pontus_core::discovery::{self, DiscoveredHost, Method};
 use pontus_core::scan::udp::{self, UdpConfig, UdpState};
-use pontus_core::scan::{OpenPort, ScanConfig, scan_hosts};
+use pontus_core::os::{self, OsCorpus};
+use pontus_core::scan::{HostPorts, OpenPort, ScanConfig, scan_hosts};
 use pontus_core::traceroute;
 use pontus_core::{
     Detector, IdentitySignals, KevCatalog, NativeDetector, NmapDetector, ObservationState,
@@ -129,6 +130,10 @@ struct ScanArgs {
     /// network (NVD/EPSS) and is best run after `intel update`.
     #[arg(long)]
     assess_vulns: bool,
+    /// OS fingerprint corpus (JSON) layered over the built-in clean-room defaults,
+    /// so signatures can be added without a rebuild (F-013).
+    #[arg(long, value_name = "PATH")]
+    os_corpus: Option<String>,
     /// Skip the traceroute / topology pass.
     #[arg(long)]
     no_traceroute: bool,
@@ -214,10 +219,10 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         connect_timeout: port_timeout,
         banner_wait: Duration::from_millis(args.banner_timeout_ms),
     };
-    let scanned: HashMap<IpAddr, Vec<OpenPort>> = scan_hosts(&live_ips, &cfg)
+    let scanned: HashMap<IpAddr, HostPorts> = scan_hosts(&live_ips, &cfg)
         .await?
         .into_iter()
-        .map(|hp| (hp.ip, hp.open))
+        .map(|hp| (hp.ip, hp))
         .collect();
 
     // Reverse-DNS the live hosts to populate the hostname identity tier (F-004).
@@ -242,6 +247,13 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         DetectorKind::Nmap => Box::new(NmapDetector::new()),
     };
 
+    // OS fingerprint corpus (F-013): the built-in clean-room defaults, with an
+    // optional user file layered on top so signatures update without a rebuild.
+    let os_corpus = match &args.os_corpus {
+        Some(path) => OsCorpus::load(path)?,
+        None => OsCorpus::builtin(),
+    };
+
     // Vulnerability assessment (F-015) is opt-in: it hits the network. Load the
     // cached KEV catalogue and dedupe CVE lookups by (product, version) per scan.
     let kev = if args.assess_vulns { load_kev_cache() } else { KevCatalog::default() };
@@ -249,7 +261,8 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
 
     let mut up = 0u64;
     for host in &hosts {
-        let open = scanned.get(&host.ip).cloned().unwrap_or_default();
+        let host_ports = scanned.get(&host.ip);
+        let open: Vec<OpenPort> = host_ports.map(|hp| hp.open.clone()).unwrap_or_default();
         let hostname = hostnames.get(&host.ip).cloned();
 
         // Identify services on the open ports (F-012) so observations carry
@@ -290,9 +303,32 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
             });
         }
 
+        // OS fingerprint from the SYN-ACK stack signature (TTL, window, DF, TCP
+        // option layout) and volunteered banners (F-013). Fall back to the ICMP
+        // echo-reply TTL so portless-but-pingable hosts still get a family guess
+        // (IMP-006).
+        let os_guess = {
+            let stack = host_ports.map(|hp| &hp.stack);
+            let banners = host_ports
+                .map(|hp| hp.open.iter().filter_map(|p| p.banner.clone()).collect())
+                .unwrap_or_default();
+            let sig = os::OsSignals {
+                ttl: stack.and_then(|s| s.ttl).or(host.ttl),
+                tcp_window: stack.and_then(|s| s.window),
+                df: stack.and_then(|s| s.df),
+                opts_layout: stack.and_then(|s| s.opts_layout.clone()),
+                banners,
+            };
+            os::fingerprint(&sig, &os_corpus)
+        };
+
         // Resolve to a durable asset (ARP-discovered hosts carry a MAC — the
         // strongest identity signal, F-004) and append one observation.
-        let state = ObservationState { up: true, open_ports: observed_ports, os_guess: None };
+        let state = ObservationState {
+            up: true,
+            open_ports: observed_ports,
+            os_guess: os_guess.as_ref().map(|g| g.label()),
+        };
         let sig = IdentitySignals {
             mac: host.mac.map(|m| m.to_string()),
             hostname: hostname.clone(),
@@ -328,6 +364,22 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         let udp_shown = render_udp(&udp_results);
         if !udp_shown.is_empty() {
             println!("         udp: {udp_shown}");
+        }
+        if let Some(g) = &os_guess {
+            println!("          os: {} ({:.0}% — {})", g.label(), g.confidence * 100.0,
+                     g.evidence.join(", "));
+        }
+        // Show the raw SYN-ACK stack signature when captured, so an unrecognised
+        // option layout is visible and can be turned into an --os-corpus rule (F-013).
+        if let Some(stack) = host_ports.map(|hp| &hp.stack)
+            && stack.opts_layout.is_some()
+        {
+            println!(
+                "       stack: opts={}  window={}  df={}",
+                stack.opts_layout.as_deref().unwrap_or("-"),
+                stack.window.map_or("-".to_string(), |w| w.to_string()),
+                stack.df.map_or("-", |d| if d { "set" } else { "clear" }),
+            );
         }
     }
 

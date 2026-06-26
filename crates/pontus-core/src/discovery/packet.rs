@@ -20,6 +20,9 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 pub struct EchoReply {
     pub identifier: u16,
     pub sequence: u16,
+    /// IPv4: the reply's IP-header TTL, an OS fingerprint signal (F-013, IMP-006).
+    /// `None` when parsed from the ICMP layer alone or over IPv6 (no header).
+    pub ttl: Option<u8>,
 }
 
 // ---- ICMPv4 ---------------------------------------------------------------
@@ -45,7 +48,8 @@ pub fn parse_icmp_reply_v4(buf: &[u8]) -> Option<(Ipv4Addr, EchoReply)> {
     if ip.get_next_level_protocol() != IpNextHeaderProtocols::Icmp {
         return None;
     }
-    let reply = parse_echo_reply_v4(ip.payload())?;
+    let mut reply = parse_echo_reply_v4(ip.payload())?;
+    reply.ttl = Some(ip.get_ttl()); // the IP header is present here, unlike the ICMP-only parser
     Some((ip.get_source(), reply))
 }
 
@@ -56,7 +60,7 @@ pub fn parse_echo_reply_v4(icmp: &[u8]) -> Option<EchoReply> {
         return None;
     }
     let echo = echo_reply::EchoReplyPacket::new(icmp)?;
-    Some(EchoReply { identifier: echo.get_identifier(), sequence: echo.get_sequence_number() })
+    Some(EchoReply { identifier: echo.get_identifier(), sequence: echo.get_sequence_number(), ttl: None })
 }
 
 /// The ICMPv4 messages traceroute reacts to (F-009): an echo reply means the probe
@@ -146,7 +150,7 @@ pub fn parse_echo_reply_v6(icmp: &[u8]) -> Option<EchoReply> {
     let body = pkt.payload();
     let identifier = u16::from_be_bytes([body[0], body[1]]);
     let sequence = u16::from_be_bytes([body[2], body[3]]);
-    Some(EchoReply { identifier, sequence })
+    Some(EchoReply { identifier, sequence, ttl: None }) // no IP header over raw ICMPv6
 }
 
 // ---- ARP ------------------------------------------------------------------
@@ -215,7 +219,7 @@ mod tests {
         let mut reply = buf.clone();
         reply[0] = 0; // EchoReply
         let parsed = parse_echo_reply_v4(&reply).unwrap();
-        assert_eq!(parsed, EchoReply { identifier: 0x1234, sequence: 7 });
+        assert_eq!(parsed, EchoReply { identifier: 0x1234, sequence: 7, ttl: None });
     }
 
     #[test]
@@ -233,10 +237,12 @@ mod tests {
         ip.set_total_length((20 + icmp.len()) as u16);
         ip.set_next_level_protocol(IpNextHeaderProtocols::Icmp);
         ip.set_source(Ipv4Addr::new(192, 168, 1, 42));
+        ip.set_ttl(64);
         ip.set_payload(&icmp);
         let (src, reply) = parse_icmp_reply_v4(&ipbuf).unwrap();
         assert_eq!(src, Ipv4Addr::new(192, 168, 1, 42));
         assert_eq!(reply.sequence, 9);
+        assert_eq!(reply.ttl, Some(64), "the IP-header TTL is captured for OS fingerprinting (IMP-006)");
     }
 
     #[test]
@@ -252,7 +258,7 @@ mod tests {
 
         buf[0] = 129; // EchoReply
         let parsed = parse_echo_reply_v6(&buf).unwrap();
-        assert_eq!(parsed, EchoReply { identifier: 0x5566, sequence: 3 });
+        assert_eq!(parsed, EchoReply { identifier: 0x5566, sequence: 3, ttl: None });
     }
 
     #[test]
