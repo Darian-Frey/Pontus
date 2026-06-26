@@ -274,3 +274,23 @@ Status vocabulary: Proposed | Accepted | Superseded by D-NNN | Deprecated.
 **Consequences.** The differentiating logic (exploitation-weighted scoring, KEV/EPSS enrichment) works offline and is deterministic to test; only CVE *matching* needs the network, and only for hosts with detected versions. Cost: a cache to manage and refresh, and NVD API rate limits to respect on the matching path.
 
 **Reversal conditions.** If NVD API availability or rate limits prove too unreliable for the matching path, move that step to a bundled/cached NVD snapshot (toward option B) while keeping the same scoring engine; if cache staleness becomes a correctness problem for KEV/EPSS, shorten the refresh interval or fetch those inline.
+
+### D-010 In-repo bug and improvement registers
+
+**Decided:** 2026-06-26 · **Recorded:** 2026-06-26
+**Status:** Accepted
+**Authors:** Shane Hartley (architect); Claude (proposal)
+**Related:** F-015 (the work that surfaced the first entries); the project documentation standard (project-scaffold)
+
+**Context.** Bug history and code-quality observations have so far lived only in commit messages and the CHANGELOG `### Fixed`/`### Changed` sections — release-notes prose, not a defect/improvement register with status, reproduction and cross-references. Pontus deliberately keeps engineering knowledge in-repo registers (`F-NNN`, `C-NNN`, `D-NNN`) rather than an external tracker, and uses GitHub only for the PR/merge flow, not Issues. The documentation standard defines `BUGS.md` (realised failures, `BUG-NNN`) and `IMPROVEMENTS.md` ("works but could be better", `IMP-NNN`) as Tier 2 documents whose stated sweet spot is solo / AI-partner development that needs bug history to survive in-repo. The F-015 work produced concrete instances of both (two fixed bugs, two deferred limitations, three improvement candidates) that would otherwise evaporate into commit footnotes.
+
+**Options.**
+- **A. No register.** Rely on commit messages + CHANGELOG. Lightest; bug/improvement history is not durably tracked with status, reproduction or cross-references.
+- **B. External issue tracker (GitHub Issues).** Standard tooling; but splits engineering knowledge out of the repo against the project's in-repo posture, and does not survive a forge migration.
+- **C. In-repo `BUGS.md` + `IMPROVEMENTS.md`.** Append-only `BUG-NNN`/`IMP-NNN`, status-sectioned, with the "log when found/noticed, not silently acted on" discipline (Maintenance Rule 8). Consistent with the existing registers. *Chosen.*
+
+**Decision.** Adopt `docs/BUGS.md` and `docs/IMPROVEMENTS.md` as Tier 2 registers with append-only `BUG-NNN`/`IMP-NNN` IDs, status sections, and the required-field discipline the standard specifies (reproduction for bugs, trade-offs for improvements). Both are maintained continuously: discoveries made while working on something else are logged before being acted on, so the author decides whether to fix/apply, defer or decline. The CLAUDE.md append-only-IDs convention is extended to include `BUG-NNN` and `IMP-NNN`.
+
+**Consequences.** Bug and improvement history becomes durable, cross-referenced (to each other, to CHANGELOG, and to F-/D- entries) and forge-independent. Cost: a small standing discipline — logging discoveries rather than silently fixing them — which is especially load-bearing for the AI partner, whose default is to act inline.
+
+**Reversal conditions.** If the project adopts an external issue tracker (GitHub Issues, Jira, Linear) as its primary workflow, retire the in-repo registers in its favour; likewise if the catalogues decay into after-the-fact records (entries logged only at commit time, adding nothing over the CHANGELOG), which would mean the log-when-found discipline has lapsed and the documents are no longer earning their keep. Either retirement is itself recorded as a decision.
