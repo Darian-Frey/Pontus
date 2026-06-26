@@ -21,13 +21,14 @@ pub mod store;
 pub mod traceroute;
 
 pub use detect::{Detector, NativeDetector, NmapDetector, PortProbe, Service};
+pub use intel::{CveRef, KevCatalog, RiskBand, Vuln, assess, band, host_risk, risk_score};
 pub use diff::{HostDiff, HostStatus, PortRef, diff_observations};
 pub use discovery::{DiscoveredHost, DiscoveryError, Method};
 pub use scan::{HostPorts, OpenPort, ScanConfig, scan_hosts};
 pub use error::{Error, Result};
 pub use model::{IdentityKind, IdentitySignals, ObservationState, PortObservation};
 pub use scope::{Scope, ScopeError};
-pub use store::{AssetObservation, AssetSummary, Edge, HostObservation, ScanRef, Store};
+pub use store::{AssetObservation, AssetSummary, AssetVuln, Edge, HostObservation, ScanRef, Store};
 
 #[cfg(test)]
 mod tests;

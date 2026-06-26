@@ -73,6 +73,21 @@ CREATE TABLE IF NOT EXISTS edges (
     dst     TEXT NOT NULL,
     UNIQUE (scan_id, src, dst)
 );
+
+-- Vulnerabilities matched to a host's service in a scan (F-015): CVE plus the
+-- three triage signals (CVSS, EPSS, KEV). Scored in the intel layer, not here.
+CREATE TABLE IF NOT EXISTS vulns (
+    scan_id  INTEGER NOT NULL REFERENCES scans(id),
+    asset_id INTEGER NOT NULL REFERENCES assets(id),
+    port     INTEGER NOT NULL,
+    cve_id   TEXT NOT NULL,
+    cvss     REAL,
+    epss     REAL,
+    kev      INTEGER NOT NULL,
+    UNIQUE (scan_id, asset_id, port, cve_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vulns_scan ON vulns(scan_id);
 "#;
 
 /// A scan's audit record, for listing and diff headers.
@@ -89,6 +104,20 @@ pub struct ScanRef {
 pub struct Edge {
     pub from: String,
     pub to: String,
+}
+
+/// A stored vulnerability joined to its asset identity, for the risk view (F-015).
+#[derive(Debug, Clone, Serialize)]
+pub struct AssetVuln {
+    pub asset_id: i64,
+    pub identity_kind: String,
+    pub identity_value: String,
+    pub ip: Option<String>,
+    pub port: u16,
+    pub cve_id: String,
+    pub cvss: Option<f32>,
+    pub epss: Option<f32>,
+    pub kev: bool,
 }
 
 /// One observation in an asset's history, for the GUI detail pane.
@@ -256,6 +285,46 @@ impl Store {
             params![scan_id, from, to],
         )?;
         Ok(())
+    }
+
+    /// Record a vulnerability matched to a host's service in a scan (F-015).
+    pub fn record_vuln(
+        &self,
+        scan_id: i64,
+        asset_id: i64,
+        port: u16,
+        vuln: &crate::intel::Vuln,
+    ) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO vulns (scan_id, asset_id, port, cve_id, cvss, epss, kev)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![scan_id, asset_id, port, vuln.cve_id, vuln.cvss, vuln.epss, vuln.kev as i64],
+        )?;
+        Ok(())
+    }
+
+    /// All vulnerabilities recorded by a scan, joined to their asset identity.
+    pub fn vulns_for_scan(&self, scan_id: i64) -> Result<Vec<AssetVuln>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT v.asset_id, a.identity_kind, a.identity_value, a.last_ip,
+                    v.port, v.cve_id, v.cvss, v.epss, v.kev
+             FROM vulns v JOIN assets a ON a.id = v.asset_id
+             WHERE v.scan_id = ?1",
+        )?;
+        let rows = stmt.query_map([scan_id], |r| {
+            Ok(AssetVuln {
+                asset_id: r.get(0)?,
+                identity_kind: r.get(1)?,
+                identity_value: r.get(2)?,
+                ip: r.get(3)?,
+                port: r.get(4)?,
+                cve_id: r.get(5)?,
+                cvss: r.get(6)?,
+                epss: r.get(7)?,
+                kev: r.get::<_, i64>(8)? != 0,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     /// The topology edges recorded by a scan.

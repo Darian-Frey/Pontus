@@ -9,8 +9,8 @@ use pontus_core::scan::udp::{self, UdpConfig, UdpState};
 use pontus_core::scan::{OpenPort, ScanConfig, scan_hosts};
 use pontus_core::traceroute;
 use pontus_core::{
-    Detector, IdentitySignals, NativeDetector, NmapDetector, ObservationState, PortObservation,
-    PortProbe, Scope, Store,
+    Detector, IdentitySignals, KevCatalog, NativeDetector, NmapDetector, ObservationState,
+    PortObservation, PortProbe, Scope, Store, Vuln, band, host_risk, risk_score,
 };
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr, TcpStream};
@@ -37,6 +37,14 @@ enum Command {
     Assets {
         #[arg(long, default_value = "pontus.db")]
         db: String,
+    },
+    /// Show hosts ranked by vulnerability risk (fix-first order) for a scan.
+    Risk {
+        #[arg(long, default_value = "pontus.db")]
+        db: String,
+        /// Scan id (defaults to the most recent).
+        #[arg(long)]
+        scan: Option<i64>,
     },
     /// Manage cached vulnerability intelligence (CISA KEV, EPSS).
     Intel {
@@ -117,6 +125,10 @@ struct ScanArgs {
     /// Service detector: the native clean-room detector, or shell out to your own nmap.
     #[arg(long, value_enum, default_value_t = DetectorKind::Native)]
     detector: DetectorKind,
+    /// Match detected services to CVEs and enrich with EPSS + KEV (F-015). Hits the
+    /// network (NVD/EPSS) and is best run after `intel update`.
+    #[arg(long)]
+    assess_vulns: bool,
     /// Skip the traceroute / topology pass.
     #[arg(long)]
     no_traceroute: bool,
@@ -145,6 +157,7 @@ async fn main() -> ExitCode {
         Command::Scan(args) => run_scan(args).await,
         Command::Assets { db } => list_assets(&db),
         Command::Intel { command } => run_intel(command),
+        Command::Risk { db, scan } => run_risk(&db, scan),
         Command::Diff { db, from, to, all } => run_diff(&db, from, to, all),
     };
     match result {
@@ -228,6 +241,12 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         DetectorKind::Native => Box::new(NativeDetector),
         DetectorKind::Nmap => Box::new(NmapDetector::new()),
     };
+
+    // Vulnerability assessment (F-015) is opt-in: it hits the network. Load the
+    // cached KEV catalogue and dedupe CVE lookups by (product, version) per scan.
+    let kev = if args.assess_vulns { load_kev_cache() } else { KevCatalog::default() };
+    let mut vuln_cache: HashMap<(String, Option<String>), Vec<Vuln>> = HashMap::new();
+
     let mut up = 0u64;
     for host in &hosts {
         let open = scanned.get(&host.ip).cloned().unwrap_or_default();
@@ -280,8 +299,24 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
             ip: Some(host.ip),
             ..Default::default()
         };
-        store.record(&sig, scan_id, &state)?;
+        let asset_id = store.record(&sig, scan_id, &state)?;
         up += 1;
+
+        // Match detected services to CVEs and enrich (F-015); deduped per product.
+        if args.assess_vulns {
+            for (port, service) in &services {
+                let Some(product) = &service.product else { continue };
+                let key = (product.clone(), service.version.clone());
+                let vulns = vuln_cache.entry(key).or_insert_with(|| {
+                    pontus_core::intel::assess(product, service.version.as_deref(), &kev)
+                        .unwrap_or_default()
+                });
+                for v in vulns.iter() {
+                    store.record_vuln(scan_id, asset_id, *port, v)?;
+                }
+            }
+        }
+
         println!(
             "  up: {:<39}  {:<4}  {:<17}  {:<24}  ports: {}",
             host.ip,
@@ -338,6 +373,9 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         store.asset_count()?,
         store.observation_count()?
     );
+    if args.assess_vulns {
+        print_risk(&store, scan_id)?;
+    }
     Ok(())
 }
 
@@ -400,6 +438,92 @@ fn run_intel(command: IntelCommand) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+/// Load the cached KEV catalogue (from `intel update`), or an empty one with a note.
+fn load_kev_cache() -> KevCatalog {
+    let path = kev_cache_path(None);
+    match std::fs::read_to_string(&path).ok().and_then(|j| KevCatalog::from_json(&j).ok()) {
+        Some(catalogue) => catalogue,
+        None => {
+            eprintln!(
+                "note: no KEV cache at {} — run `pontus-cli intel update` for KEV enrichment",
+                path.display()
+            );
+            KevCatalog::default()
+        }
+    }
+}
+
+fn run_risk(db: &str, scan: Option<i64>) -> Result<(), Box<dyn std::error::Error>> {
+    let store = Store::open(db)?;
+    let scan_id = match scan {
+        Some(id) => id,
+        None => store
+            .recent_scans(1)?
+            .first()
+            .map(|s| s.id)
+            .ok_or("no scans in the store")?,
+    };
+    print_risk(&store, scan_id)?;
+    Ok(())
+}
+
+/// Render hosts ranked by vulnerability risk (fix-first order, C-002).
+fn print_risk(store: &Store, scan_id: i64) -> Result<(), Box<dyn std::error::Error>> {
+    let stored = store.vulns_for_scan(scan_id)?;
+    if stored.is_empty() {
+        println!("\nrisk: no vulnerabilities recorded for scan {scan_id}");
+        return Ok(());
+    }
+
+    // Group vulnerabilities by host.
+    let mut by_asset: HashMap<i64, (String, Option<String>, Vec<Vuln>)> = HashMap::new();
+    for av in stored {
+        let entry = by_asset.entry(av.asset_id).or_insert_with(|| {
+            (format!("{} {}", av.identity_kind, av.identity_value), av.ip.clone(), Vec::new())
+        });
+        entry.2.push(Vuln { cve_id: av.cve_id, cvss: av.cvss, epss: av.epss, kev: av.kev });
+    }
+
+    // Rank hosts by their worst vulnerability.
+    let mut hosts: Vec<HostRiskRow> = by_asset
+        .into_values()
+        .map(|(identity, ip, vulns)| {
+            let top = vulns
+                .iter()
+                .max_by(|a, b| risk_score(a).total_cmp(&risk_score(b)))
+                .cloned();
+            HostRiskRow { risk: host_risk(&vulns), identity, ip, count: vulns.len(), top }
+        })
+        .collect();
+    hosts.sort_by(|a, b| b.risk.total_cmp(&a.risk));
+
+    println!("\nrisk (fix first):");
+    for row in hosts {
+        let top_desc = row
+            .top
+            .map(|v| format!("{} [{}]", v.cve_id, band(&v).as_str()))
+            .unwrap_or_default();
+        println!(
+            "  {:>7.1}  {:<26} {:<16} {:>3} vuln(s)  top: {}",
+            row.risk,
+            row.identity,
+            row.ip.as_deref().unwrap_or("-"),
+            row.count,
+            top_desc
+        );
+    }
+    Ok(())
+}
+
+/// One row of the risk-ranked host view.
+struct HostRiskRow {
+    risk: f32,
+    identity: String,
+    ip: Option<String>,
+    count: usize,
+    top: Option<Vuln>,
 }
 
 fn kev_cache_path(cache: Option<String>) -> std::path::PathBuf {
