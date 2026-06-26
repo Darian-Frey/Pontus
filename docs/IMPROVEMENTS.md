@@ -81,6 +81,28 @@ candidate.
 - **Trade-offs.** More fields widen the data model and the corpus schema; MSS and window-scale values are influenced by path MTU and tuning, so they must be low-weight/advisory to avoid false precision. Diminishing returns versus the option layout, which already does most of the discrimination.
 - **Notes.** Extends D-011 and the option-layout work. The active-probe path (D-011 option A) remains the route to version-level precision if family-level proves insufficient.
 
+### IMP-008: Integrate TLS inspection into the scan / observation model
+
+- **Status:** suggested
+- **Found:** 2026-06-27, implementing F-016 as a standalone `tls` command.
+- **Location:** [crates/pontus-core/src/tls.rs](../crates/pontus-core/src/tls.rs), [crates/pontus-cli/src/main.rs](../crates/pontus-cli/src/main.rs) (scan loop), [crates/pontus-core/src/store.rs](../crates/pontus-core/src/store.rs).
+- **Effort:** medium
+- **Description.** `pontus-cli tls <host>` inspects one endpoint and prints a report, but the result is not recorded against the asset — so TLS findings don't participate in drift, baselines, or the risk view. The asset model (D-007) wants this as observation data.
+- **Proposal.** During a scan, run `tls::inspect` on open TLS ports and store the findings (expiry, deprecated protocol, weak cipher) as part of the observation, surfaced in the GUI asset detail and foldable into risk.
+- **Trade-offs.** Inspection adds several handshakes per TLS port, lengthening scans (gate behind a flag, like `--assess-vulns`); the data model needs a place for cert/finding records.
+- **Notes.** Builds on F-016/D-012. Pairs with [IMP-004](#imp-004-surface-the-os-guess-in-the-gui-inventory) (GUI surfacing).
+
+### IMP-009: Capture certificates from TLS 1.3-only servers
+
+- **Status:** suggested
+- **Found:** 2026-06-27, implementing F-016.
+- **Location:** [crates/pontus-core/src/tls.rs](../crates/pontus-core/src/tls.rs).
+- **Effort:** large
+- **Description.** Certificate capture parses the `Certificate` message from a TLS ≤1.2 handshake, where it is in the clear. A TLS 1.3-only server encrypts its certificate (after `ServerHello`), so we cannot read it without performing the key exchange — such servers yield protocols/findings but no cert details.
+- **Proposal.** Either complete a real TLS 1.3 handshake far enough to decrypt the `EncryptedExtensions`/`Certificate` (needs X25519 + HKDF + AEAD), or adopt `rustls` for cert capture per D-012's reversal condition while keeping the hand-rolled prober for legacy enumeration.
+- **Trade-offs.** A real 1.3 handshake pulls in cryptography (the dependency D-012 deliberately avoided); rustls is the pragmatic route but adds a crypto provider (ring/aws-lc-rs). Worth it only if TLS 1.3-only endpoints without ≤1.2 become common in practice.
+- **Notes.** Documented limitation of D-012. Independent of [IMP-008](#imp-008-integrate-tls-inspection-into-the-scan--observation-model).
+
 ## Applied
 
 ### IMP-006: Capture the ICMP echo-reply TTL so portless hosts get an OS guess

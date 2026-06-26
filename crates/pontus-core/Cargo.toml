@@ -18,3 +18,4 @@ pnet.workspace = true
 libc.workspace = true
 roxmltree.workspace = true
 ureq.workspace = true
+x509-parser.workspace = true

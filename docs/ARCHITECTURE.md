@@ -314,3 +314,23 @@ Status vocabulary: Proposed | Accepted | Superseded by D-NNN | Deprecated.
 **Consequences.** Family-level OS attribution — distinguishing Linux, Windows and macOS/BSD by their stack signature, not just TTL — lands cheaply and stays clear of the licensing trap, and the corpus is community-updatable. Cost: no version-level precision; option-layout rules need occasional tuning as stacks evolve (extensible via the corpus); and IPv6 loses the TTL/DF signals (the kernel strips the IP header on a raw v6 TCP socket), though the option layout and window survive (BUG-005). The shell-out (B) and active-probe (A) paths remain available as future precision backends.
 
 **Reversal conditions.** If family-level accuracy proves insufficient and users need version-level OS identification, add either an active clean-room probe sequence (option A) or an optional `nmap -O` shell-out backend paralleling the D-006 detector (option B) — selected at runtime, never bundling `nmap-os-db`.
+
+### D-012 Pure-Rust, clean-room TLS inspection (no OpenSSL)
+
+**Decided:** 2026-06-27 · **Recorded:** 2026-06-27
+**Status:** Accepted
+**Authors:** Shane Hartley (architect); Claude (proposal)
+**Related:** F-016, C-001, D-001
+
+**Context.** TLS/SSL inspection (F-016) must observe what a *normal* TLS client never would: the *deprecated* protocols (SSLv3/TLS 1.0/1.1) and *weak* cipher suites a server still accepts, and the certificate even when it is expired or self-signed. The natural libraries pull in opposite directions. `rustls` is pure-Rust and cross-platform but deliberately refuses to speak legacy protocols or weak ciphers — so it cannot probe for them. System OpenSSL (`openssl` crate) can, but adds a C dependency (`libssl-dev`) that complicates the planned Phase 5 Windows release, and a modern OpenSSL has often compiled out the very protocols we want to test for. The project has repeatedly chosen to own its probe mechanisms clean-room (the native packet and UDP probes, C-001/D-006).
+
+**Options.**
+- **A. `rustls` only.** Pure-Rust cert inspection; cannot enumerate weak/legacy support (rustls won't offer it). Misses half the acceptance.
+- **B. `openssl` crate.** Fullest active probing, but a system C dependency against an otherwise pure-Rust codebase, hostile to the Windows pipeline, and limited by what the local OpenSSL still supports.
+- **C. Clean-room hand-rolled prober.** Construct `ClientHello`s and parse `ServerHello`/`Certificate` directly (the sslscan/testssl technique), delegating only X.509 parsing to `x509-parser`. Full control, no crypto/OpenSSL dependency, pure-Rust and cross-platform. *Chosen* (user decision, 2026-06-27).
+
+**Decision.** Implement F-016 as the `tls` module: a hand-rolled prober that enumerates protocol support SSLv3–TLS 1.3, probes weak-cipher acceptance by offering a weak-only suite list, and captures the certificate from a TLS ≤1.2 `Certificate` message (in the clear), parsed by `x509-parser`. No OpenSSL, no crypto provider. A `pontus-cli tls <target>` command surfaces the report and honours scope enforcement (F-007) like any other active probe.
+
+**Consequences.** Pontus can flag deprecated protocols, weak ciphers, and expired/self-signed/weak certificates with no C dependency, keeping the engine pure-Rust and Windows-friendly. Live-verified against badssl.com (expired, self-signed, 3DES-accepting endpoints). Cost: we maintain a little TLS wire parsing, and a **TLS 1.3-only** server encrypts its `Certificate`, so cert capture needs the server to also speak ≤1.2 (IMP follow-up); deep crypto validation (chain building, OCSP/CT) is out of scope for this cut.
+
+**Reversal conditions.** If the wire parser becomes a maintenance burden, or we need full TLS 1.3 cert capture / chain validation / OCSP, adopt `rustls` (with a pure-Rust-friendly provider) for the *handshake and cert capture* while keeping the hand-rolled prober for the legacy-protocol/weak-cipher enumeration rustls cannot perform.
