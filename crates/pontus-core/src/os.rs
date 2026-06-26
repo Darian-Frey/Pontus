@@ -23,6 +23,7 @@
 use crate::error::Result;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::net::IpAddr;
 
 /// The passively-observed signals fed to [`fingerprint`].
 #[derive(Debug, Clone, Default)]
@@ -242,11 +243,15 @@ pub struct OsGuess {
 }
 
 impl OsGuess {
-    /// A compact label for storage/display: "Linux/Unix (Ubuntu)" or "Windows".
+    /// A compact label for storage/display: "Linux/Unix (Ubuntu)", "Windows", or —
+    /// when the detail already names the family (e.g. nmap's "Linux 5.0 - 5.4") —
+    /// just the detail.
     pub fn label(&self) -> String {
         match &self.detail {
-            Some(d) if d != &self.family => format!("{} ({})", self.family, d),
-            _ => self.family.clone(),
+            Some(d) if d == &self.family => self.family.clone(),
+            Some(d) if d.starts_with(&self.family) => d.clone(),
+            Some(d) => format!("{} ({})", self.family, d),
+            None => self.family.clone(),
         }
     }
 }
@@ -322,6 +327,102 @@ fn describe(rule: &OsRule) -> String {
     } else {
         rule.family.clone()
     }
+}
+
+/// Selects how a host's OS guess is produced (F-013, D-011): the default passive
+/// corpus, or a shell-out to the user's own `nmap -O`.
+pub trait OsDetector {
+    /// Guess `host`'s OS. `signals` are the passively-captured stack/banner
+    /// signals; an active backend may ignore them and probe the host itself.
+    fn detect(&self, host: IpAddr, signals: &OsSignals) -> Option<OsGuess>;
+}
+
+/// The default detector: score passive `signals` against an [`OsCorpus`].
+pub struct NativeOsDetector {
+    corpus: OsCorpus,
+}
+
+impl NativeOsDetector {
+    pub fn new(corpus: OsCorpus) -> Self {
+        Self { corpus }
+    }
+}
+
+impl OsDetector for NativeOsDetector {
+    fn detect(&self, _host: IpAddr, signals: &OsSignals) -> Option<OsGuess> {
+        fingerprint(signals, &self.corpus)
+    }
+}
+
+/// Optional backend that shells out to the user's own `nmap -O` (D-011 option B,
+/// mirroring the service `NmapDetector`/D-006). Never bundles or vendors Nmap, and
+/// never reads `nmap-os-db` itself (C-001) — it only parses the verdict Nmap
+/// prints. Returns `None` if nmap is absent, unprivileged (`-O` needs raw sockets,
+/// so run via sudo), or makes no OS match, so the caller degrades gracefully.
+pub struct NmapOsDetector {
+    binary: String,
+}
+
+impl NmapOsDetector {
+    pub fn new() -> Self {
+        Self { binary: "nmap".to_string() }
+    }
+
+    pub fn with_binary(binary: impl Into<String>) -> Self {
+        Self { binary: binary.into() }
+    }
+}
+
+impl Default for NmapOsDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl OsDetector for NmapOsDetector {
+    fn detect(&self, host: IpAddr, _signals: &OsSignals) -> Option<OsGuess> {
+        let output = std::process::Command::new(&self.binary)
+            .args(["-O", "-Pn", "-oX", "-", &host.to_string()])
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None; // nmap missing, unprivileged, or errored
+        }
+        parse_nmap_os(&String::from_utf8_lossy(&output.stdout))
+    }
+}
+
+/// Parse the highest-accuracy `<osmatch>` from `nmap -oX` OS output into an
+/// [`OsGuess`]. The osmatch name carries the version range (e.g. "Linux 5.0 -
+/// 5.4"); the osclass gives the family.
+fn parse_nmap_os(xml: &str) -> Option<OsGuess> {
+    // nmap's XML carries a `<!DOCTYPE nmaprun>`, which roxmltree rejects unless DTDs
+    // are explicitly allowed.
+    let options = roxmltree::ParsingOptions { allow_dtd: true, ..Default::default() };
+    let doc = roxmltree::Document::parse_with_options(xml, options).ok()?;
+
+    let (name, accuracy, node) = doc
+        .descendants()
+        .filter(|n| n.has_tag_name("osmatch"))
+        .filter_map(|m| {
+            let name = m.attribute("name")?.to_string();
+            let acc = m.attribute("accuracy").and_then(|a| a.parse::<f32>().ok()).unwrap_or(0.0);
+            Some((name, acc, m))
+        })
+        .max_by(|a, b| a.1.total_cmp(&b.1))?;
+
+    let osclass = node.descendants().find(|n| n.has_tag_name("osclass"));
+    let family = osclass
+        .and_then(|c| c.attribute("osfamily").or_else(|| c.attribute("vendor")))
+        .filter(|s| !s.is_empty())
+        .map_or_else(|| name.clone(), str::to_string);
+
+    let mut evidence = vec!["nmap -O".to_string()];
+    if let Some(cpe) = node.descendants().find(|n| n.has_tag_name("cpe")).and_then(|n| n.text()) {
+        evidence.push(cpe.to_string());
+    }
+
+    Some(OsGuess { family, detail: Some(name), confidence: accuracy / 100.0, evidence })
 }
 
 #[cfg(test)]
@@ -459,5 +560,46 @@ mod tests {
         assert_eq!(g.label(), "Linux/Unix (Ubuntu)");
         let g2 = OsGuess { detail: None, ..g };
         assert_eq!(g2.label(), "Linux/Unix");
+        // A detail that already names the family (nmap's range) isn't doubled up.
+        let g3 = OsGuess {
+            family: "Linux".into(),
+            detail: Some("Linux 5.0 - 5.4".into()),
+            confidence: 0.95,
+            evidence: vec![],
+        };
+        assert_eq!(g3.label(), "Linux 5.0 - 5.4");
+    }
+
+    #[test]
+    fn parses_nmap_os_match() {
+        let xml = r#"<?xml version="1.0"?>
+<!DOCTYPE nmaprun>
+<nmaprun>
+<host>
+<os>
+<osmatch name="Linux 4.15 - 5.8" accuracy="92">
+<osclass type="general purpose" vendor="Linux" osfamily="Linux" osgen="4.X" accuracy="92"/>
+</osmatch>
+<osmatch name="Linux 5.0 - 5.4" accuracy="95">
+<osclass type="general purpose" vendor="Linux" osfamily="Linux" osgen="5.X" accuracy="95">
+<cpe>cpe:/o:linux:linux_kernel:5</cpe>
+</osclass>
+</osmatch>
+</os>
+</host>
+</nmaprun>"#;
+        let g = parse_nmap_os(xml).unwrap();
+        // The highest-accuracy match wins.
+        assert_eq!(g.family, "Linux");
+        assert_eq!(g.detail.as_deref(), Some("Linux 5.0 - 5.4"));
+        assert!((g.confidence - 0.95).abs() < 1e-6);
+        assert!(g.evidence.iter().any(|e| e.contains("cpe:/o:linux")));
+        assert_eq!(g.label(), "Linux 5.0 - 5.4");
+    }
+
+    #[test]
+    fn nmap_os_output_without_a_match_is_none() {
+        let xml = r#"<?xml version="1.0"?><!DOCTYPE nmaprun><nmaprun><host><os></os></host></nmaprun>"#;
+        assert!(parse_nmap_os(xml).is_none());
     }
 }
