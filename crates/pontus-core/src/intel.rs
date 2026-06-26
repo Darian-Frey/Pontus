@@ -232,15 +232,20 @@ pub fn fetch_nvd(product: &str, version: Option<&str>) -> Result<Vec<CveRef>> {
 
 /// Resolve a product name to its NVD CPE (vendor, product) via the CPE API.
 fn resolve_cpe(product: &str) -> Result<Option<(String, String)>> {
-    let url = format!("{NVD_CPE_API}?keywordSearch={}&resultsPerPage=50", encode(product));
+    // A wide page so the dominant vendor is visible: NVD returns CPEs oldest-first,
+    // and obsolete vendors (e.g. nginx's `igor_sysoev`, which carries no CVEs) sort
+    // ahead of the maintained one — so the first match is the wrong one.
+    let url = format!("{NVD_CPE_API}?keywordSearch={}&resultsPerPage=1000", encode(product));
     Ok(parse_cpe(&http_get(&url)?, product))
 }
 
-/// Parse an NVD CPE API response, picking the (vendor, product) whose product part
-/// matches the detected name (falling back to the first application CPE).
+/// Parse an NVD CPE API response, choosing the (vendor, product) whose product part
+/// matches the detected name and whose vendor is the **most frequent** (the
+/// maintained one), falling back to the first application CPE.
 pub fn parse_cpe(json: &str, product: &str) -> Option<(String, String)> {
     let value: serde_json::Value = serde_json::from_str(json).ok()?;
     let target = product.to_lowercase();
+    let mut counts: HashMap<(String, String), usize> = HashMap::new();
     let mut fallback = None;
     for item in value.get("products")?.as_array()? {
         let Some(name) = item.get("cpe").and_then(|c| c.get("cpeName")).and_then(|n| n.as_str())
@@ -252,12 +257,13 @@ pub fn parse_cpe(json: &str, product: &str) -> Option<(String, String)> {
         if parts.len() > 5 && parts[2] == "a" {
             let pair = (parts[3].to_string(), parts[4].to_string());
             if parts[4].eq_ignore_ascii_case(&target) {
-                return Some(pair);
+                *counts.entry(pair).or_insert(0) += 1;
+            } else {
+                fallback.get_or_insert(pair);
             }
-            fallback.get_or_insert(pair);
         }
     }
-    fallback
+    counts.into_iter().max_by_key(|(_, n)| *n).map(|(pair, _)| pair).or(fallback)
 }
 
 /// Assess a detected service: match it to CVEs (NVD), then enrich each with EPSS
