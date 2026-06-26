@@ -232,10 +232,12 @@ pub fn fetch_nvd(product: &str, version: Option<&str>) -> Result<Vec<CveRef>> {
 
 /// Resolve a product name to its NVD CPE (vendor, product) via the CPE API.
 fn resolve_cpe(product: &str) -> Result<Option<(String, String)>> {
-    // A wide page so the dominant vendor is visible: NVD returns CPEs oldest-first,
-    // and obsolete vendors (e.g. nginx's `igor_sysoev`, which carries no CVEs) sort
-    // ahead of the maintained one — so the first match is the wrong one.
-    let url = format!("{NVD_CPE_API}?keywordSearch={}&resultsPerPage=1000", encode(product));
+    // A wide page so the *whole* vendor distribution is visible: NVD returns CPEs
+    // oldest-first, and a product's CVEs can be split across vendors (e.g. nginx is
+    // spread over igor_sysoev (no CVEs), nginx and f5). Reading only the first page
+    // can let an early-but-minor vendor outvote the maintained one, so request the
+    // maximum page and pick the most frequent vendor across all of it.
+    let url = format!("{NVD_CPE_API}?keywordSearch={}&resultsPerPage=10000", encode(product));
     Ok(parse_cpe(&http_get(&url)?, product))
 }
 
