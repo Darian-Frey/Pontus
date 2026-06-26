@@ -19,6 +19,7 @@ pub mod rdns;
 pub mod scan;
 pub mod scope;
 pub mod store;
+pub mod tls;
 pub mod traceroute;
 
 pub use detect::{Detector, NativeDetector, NmapDetector, PortProbe, Service};
@@ -32,6 +33,7 @@ pub use os::{
     NativeOsDetector, NmapOsDetector, OsCorpus, OsDetector, OsGuess, OsSignals, fingerprint,
 };
 pub use scope::{Scope, ScopeError};
+pub use tls::{CertInfo, Finding, ProtocolVersion, TlsReport, inspect};
 pub use store::{
     AssetObservation, AssetSummary, AssetVuln, Edge, HostObservation, HostRisk, RankedVuln,
     ScanRef, Store,

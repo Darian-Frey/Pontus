@@ -137,8 +137,8 @@ Diff any two scans; designate baselines; show deviation. **Acceptance:** opening
 Match detected versions to NVD/OSV; enrich with EPSS and CISA KEV; composite a per-host risk score (C-002). **Acceptance:** a host with a KEV-listed vulnerable service sorts above a host with only a high-CVSS, low-EPSS issue.
 
 ### F-016 TLS/SSL inspection
-**Priority:** Should · **Status:** Not started
-Cert chain, expiry, weak ciphers, SNI, certificate-transparency cross-reference. **Acceptance:** flags an expired cert and a weak cipher suite on a test endpoint.
+**Priority:** Should · **Status:** Done (core + CLI; D-012)
+Cert chain, expiry, weak ciphers, SNI, certificate-transparency cross-reference. A clean-room, pure-Rust prober (`tls` module, no OpenSSL): enumerates protocols SSLv3–TLS 1.3, probes weak-cipher acceptance, and captures + inspects the certificate (expiry, self-signed, weak signature/key, SAN/hostname). `pontus-cli tls <host>` reports it. CT cross-reference and full TLS 1.3-only cert capture are follow-ups. **Acceptance:** flags an expired cert and a weak cipher suite on a test endpoint — met, live-verified against badssl.com.
 
 ### F-017 HTTP tech fingerprinting
 **Priority:** Could · **Status:** Not started

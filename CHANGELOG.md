@@ -48,6 +48,7 @@ are complete and Phase 3 (Intelligence) is in progress; everything below is on
 - GUI risk view — `View ▸ Risk / vulnerabilities…` (Ctrl+R): a master/detail triage queue over a shared `store::risk_ranked` and FFI `pontus_risk_json`, hosts worst-first with a per-host CVE breakdown (band, CVSS, EPSS, KEV badge), band-coloured (F-015).
 - Native OS fingerprinting (`os` module): a passive, p0f-style family-level guess from a `StackSignature` read off the SYN-ACK — the TCP-option layout (Linux `MSTNW` vs Windows `MNWNNS` vs macOS, the strongest discriminator), initial TTL, window and DF bit — plus volunteered service-banner tokens and the ICMP echo-reply TTL for portless hosts. Scored against a clean-room `OsCorpus` (public IP-stack option orders/TTLs + host-emitted strings, never `nmap-os-db`); confidence blends signal agreement with evidence strength so a lone TTL caps at 0.5. `pontus-cli scan` records and prints it; `--os-corpus <path>` layers a user JSON file over the defaults, updatable without a rebuild (F-013, C-001, D-011; IMP-006). An example corpus ships at `examples/os-corpus.json`.
 - Optional Nmap-backed OS detector (`os::NmapOsDetector` behind an `OsDetector` trait): `pontus-cli scan --os-detector nmap` shells out to the user's own `nmap -O` and parses the highest-accuracy `<osmatch>` for a version-range guess (e.g. "Linux 5.0 - 5.4"). Never bundled, never reads `nmap-os-db` itself (F-013, C-001, D-006/D-011); `-O` needs raw sockets, so run via sudo.
+- TLS/SSL inspection (`tls` module, `pontus-cli tls <host>`): a clean-room, pure-Rust prober (no OpenSSL/crypto dependency) that hand-rolls `ClientHello`s and parses `ServerHello`/`Certificate` directly. Enumerates protocols SSLv3–TLS 1.3, probes weak-cipher acceptance, and captures + inspects the certificate (expiry, self-signed, weak signature/key, SAN/hostname). Scope-enforced (F-007); live-verified against badssl.com (F-016, C-001, D-012). Adds the `x509-parser` dependency.
 
 #### Tooling and documentation
 
@@ -74,5 +75,6 @@ are complete and Phase 3 (Intelligence) is in progress; everything below is on
 - **D-009** — hybrid vulnerability-data delivery: cache the small KEV/EPSS feeds locally for offline, testable scoring; query the NVD API on demand for CVE matching.
 - **D-010** — adopt in-repo `BUGS.md` / `IMPROVEMENTS.md` Tier-2 registers (`BUG-NNN` / `IMP-NNN`) over an external tracker.
 - **D-011** — OS fingerprinting is passive, family-level and corpus-driven (clean-room), not active stack fingerprinting or a bundled OS database.
+- **D-012** — TLS/SSL inspection is a pure-Rust, clean-room prober (hand-rolled `ClientHello`/`ServerHello` parsing + `x509-parser`), not OpenSSL — keeping the engine cross-platform for the Windows pipeline.
 
 [Unreleased]: https://github.com/Darian-Frey/Pontus

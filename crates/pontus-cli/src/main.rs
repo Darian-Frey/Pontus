@@ -66,6 +66,24 @@ enum Command {
         #[arg(long)]
         all: bool,
     },
+    /// Inspect a host's TLS/SSL: protocols, cipher suites and certificate (F-016).
+    Tls(TlsArgs),
+}
+
+#[derive(Parser)]
+struct TlsArgs {
+    /// Target host (IP or hostname) to inspect; the hostname is also used for SNI.
+    target: String,
+    /// Authorised scope (repeatable). Mandatory — nothing is contacted outside it
+    /// (F-007). Defaults to the target itself when omitted.
+    #[arg(long = "scope", value_name = "CIDR|IP")]
+    scope: Vec<String>,
+    /// Port to inspect.
+    #[arg(long, default_value_t = 443)]
+    port: u16,
+    /// Per-probe connect/read timeout, milliseconds.
+    #[arg(long, default_value_t = 4000)]
+    timeout_ms: u64,
 }
 
 #[derive(Subcommand)]
@@ -178,6 +196,7 @@ async fn main() -> ExitCode {
         Command::Intel { command } => run_intel(command),
         Command::Risk { db, scan } => run_risk(&db, scan),
         Command::Diff { db, from, to, all } => run_diff(&db, from, to, all),
+        Command::Tls(args) => run_tls(args),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -595,6 +614,71 @@ fn default_cache_dir() -> std::path::PathBuf {
         return std::path::PathBuf::from(home).join(".cache").join("pontus");
     }
     std::path::PathBuf::from(".pontus-cache")
+}
+
+fn run_tls(args: TlsArgs) -> Result<(), Box<dyn std::error::Error>> {
+    use std::net::ToSocketAddrs;
+
+    // The hostname doubles as SNI; a bare IP target carries no SNI.
+    let is_ip = args.target.parse::<IpAddr>().is_ok();
+    let sni = if is_ip { String::new() } else { args.target.clone() };
+
+    let addr = (args.target.as_str(), args.port)
+        .to_socket_addrs()?
+        .next()
+        .ok_or("could not resolve target")?;
+
+    // Scope enforcement (F-007): refuse before any packet. Defaults to the target.
+    let scope_specs: Vec<String> =
+        if args.scope.is_empty() { vec![addr.ip().to_string()] } else { args.scope.clone() };
+    let scope = Scope::parse(&scope_specs)?;
+    scope.ensure(addr.ip())?;
+
+    println!("tls: {} ({}) port {}", args.target, addr.ip(), args.port);
+    let report = pontus_core::tls::inspect(addr, &sni, Duration::from_millis(args.timeout_ms));
+    print_tls_report(&report);
+    Ok(())
+}
+
+fn print_tls_report(r: &pontus_core::TlsReport) {
+    println!("\nprotocols:");
+    for p in &r.protocols {
+        let mark = if p.supported { "yes" } else { "no" };
+        let cipher = p.cipher.as_deref().map(|c| format!("  {c}")).unwrap_or_default();
+        let dep = if p.supported && p.version.is_deprecated() { "  [deprecated]" } else { "" };
+        println!("  {:<8} {:<3}{}{}", p.version.label(), mark, cipher, dep);
+    }
+    if !r.weak_ciphers.is_empty() {
+        println!("\nweak ciphers accepted: {}", r.weak_ciphers.join(", "));
+    }
+    if let Some(c) = &r.cert {
+        println!("\ncertificate:");
+        println!("  subject:     {}", c.subject);
+        println!("  issuer:      {}", c.issuer);
+        if !c.sans.is_empty() {
+            println!("  SANs:        {}", c.sans.join(", "));
+        }
+        println!("  valid:       {} → {}", fmt_ts(c.not_before), fmt_ts(c.not_after));
+        let key = c.key_bits.map_or_else(|| c.key_type.clone(), |b| format!("{} {b}", c.key_type));
+        println!("  key:         {key}");
+        println!("  signature:   {}", c.signature_algorithm);
+        println!("  self-signed: {}", c.self_signed);
+    }
+    println!("\nfindings:");
+    if r.findings.is_empty() {
+        println!("  none — no weaknesses detected");
+    } else {
+        for f in &r.findings {
+            println!("  - {}", f.describe());
+        }
+    }
+}
+
+/// Format a Unix timestamp as an ISO 8601 UTC date-time.
+fn fmt_ts(ts: i64) -> String {
+    chrono::DateTime::from_timestamp(ts, 0)
+        .map(|dt| dt.format("%Y-%m-%d %H:%M:%SZ").to_string())
+        .unwrap_or_else(|| ts.to_string())
 }
 
 fn run_diff(db: &str, from: Option<i64>, to: Option<i64>, all: bool) -> Result<(), Box<dyn std::error::Error>> {
