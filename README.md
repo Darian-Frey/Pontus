@@ -42,7 +42,7 @@ pontus/
 │   └── pontus-plugins/   Plugin host: pyo3 / mlua / wasmtime (Phase 4, D-003)
 ├── gui/                  Qt6 / C++20 desktop frontend (Phase 2)
 ├── plugins/             First-party plugin sources
-├── docs/                VISION, ARCHITECTURE, ROADMAP
+├── docs/                VISION, ARCHITECTURE, ROADMAP, BUGS, IMPROVEMENTS
 └── Cargo.toml           Workspace manifest
 ```
 
@@ -51,6 +51,8 @@ pontus/
 - [Vision](docs/VISION.md) — the problem, the Nmap gap, differentiation, design principles, feature register (F-NNN) and load-bearing claims (C-NNN)
 - [Architecture](docs/ARCHITECTURE.md) — three-tier structure, the asset/observation data model, invariants, and the decision register (D-NNN)
 - [Roadmap](docs/ROADMAP.md) — five-phase plan, features mapped to phases
+- [Bugs](docs/BUGS.md) — in-repo defect log with status and reproduction (BUG-NNN)
+- [Improvements](docs/IMPROVEMENTS.md) — candidate refactors and code-quality changes (IMP-NNN)
 - [Build](BUILD.md) — toolchain, build, capabilities, running, troubleshooting
 - [Changelog](CHANGELOG.md) — version history (Keep a Changelog), referencing the registers
 - [CLAUDE.md](CLAUDE.md) — handoff for AI-assisted sessions

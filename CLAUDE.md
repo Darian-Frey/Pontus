@@ -84,7 +84,7 @@ Raw-socket scanning requires `CAP_NET_RAW` (or root); prefer granting the capabi
 
 - **Documentation standard:** project-scaffold (github.com/Darian-Frey/project-scaffold). British English throughout. ISO 8601 dates. README status blockquote header (Status / Provenance / Last reviewed / Why this status).
 - **Register placement (note the divergence from the scaffold's file-per-register default):** this project uses the five-document set (README, VISION, ARCHITECTURE, ROADMAP, CLAUDE), so `C-NNN` and `F-NNN` live in VISION.md and `D-NNN` lives in ARCHITECTURE.md. If the registers grow unwieldy, split `FEATURES.md` and `DECISIONS.md` out as their own Tier 1/2 files per the standard — that is a `D-NNN` decision when it happens.
-- **Append-only IDs:** F-NNN, C-NNN, D-NNN, (AV-NNN reserved). Never deleted or renumbered; withdrawn/superseded entries get a status flag.
+- **Append-only IDs:** F-NNN, C-NNN, D-NNN, BUG-NNN, IMP-NNN, (AV-NNN reserved). Never deleted or renumbered; withdrawn/superseded entries get a status flag. `BUG-NNN` lives in docs/BUGS.md and `IMP-NNN` in docs/IMPROVEMENTS.md (adopted in D-010); both follow the "log when found, not silently acted on" discipline.
 - **Every decision needs a reversal condition** — without one it's a belief, not a decision.
 - **Naming:** Greek/Latin primordial mythology for project names (Pontus = the primordial sea; charting the unknown sea of hosts). Rust crates use the `pontus-*` prefix.
 - **Commit messages:** imperative mood; reference D-NNN / F-NNN in the body when applicable.
