@@ -119,6 +119,18 @@ pub unsafe extern "C" fn pontus_topology_json(handle: *mut PontusHandle, scan_id
     with_handle(handle, |h| serde_json::to_string(&h.store.edges_for_scan(scan_id).ok()?).ok())
 }
 
+/// JSON array of hosts ranked by exploitation-weighted risk for a scan (F-015):
+/// `[{"asset_id":…,"identity_kind":…,"identity_value":…,"ip":…,"risk":…,
+/// "vulns":[{"cve_id":…,"cvss":…,"epss":…,"kev":…,"band":…,"score":…}, …]}, …]`,
+/// worst host first and, within each host, worst vulnerability first.
+///
+/// # Safety
+/// `handle` must be a valid handle from [`pontus_open`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pontus_risk_json(handle: *mut PontusHandle, scan_id: i64) -> *mut c_char {
+    with_handle(handle, |h| serde_json::to_string(&h.store.risk_ranked(scan_id).ok()?).ok())
+}
+
 /// Designate `scan_id` as the baseline this store diffs against (F-014). Returns
 /// true on success. This is a metadata write to the GUI's own store — distinct
 /// from scanning, which the GUI does by shelling out to the CLI (D-008).
@@ -208,6 +220,14 @@ mod tests {
         store.finish_scan(s2).unwrap();
         // A topology edge for scan 1 (F-009).
         store.record_edge(s1, "192.168.1.50", "192.168.1.5").unwrap();
+        // A KEV-listed vulnerability on scan 1 for the risk view (F-015).
+        let vuln = pontus_core::Vuln {
+            cve_id: "CVE-2023-48795".to_string(),
+            cvss: Some(5.9),
+            epss: Some(0.42),
+            kev: true,
+        };
+        store.record_vuln(s1, 1, 22, &vuln).unwrap();
     }
 
     fn read_and_free(ptr: *mut c_char) -> String {
@@ -243,6 +263,12 @@ mod tests {
         let topology = read_and_free(unsafe { pontus_topology_json(handle, 1) });
         assert!(topology.contains("192.168.1.50") && topology.contains("192.168.1.5"),
                 "topology edge in JSON: {topology}");
+
+        let risk = read_and_free(unsafe { pontus_risk_json(handle, 1) });
+        assert!(risk.contains("CVE-2023-48795") && risk.contains("\"kev\":true"),
+                "KEV vulnerability in risk JSON: {risk}");
+        assert_eq!(read_and_free(unsafe { pontus_risk_json(handle, 2) }), "[]",
+                   "scan with no vulns ranks empty");
 
         // Baseline write/read round-trip (F-014).
         assert_eq!(unsafe { pontus_baseline(handle) }, -1, "no baseline initially");

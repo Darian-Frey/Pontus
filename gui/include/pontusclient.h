@@ -26,6 +26,7 @@ public:
     QJsonArray assetHistory(long long assetId);
     QJsonArray diff(long long fromScan, long long toScan);
     QJsonArray topology(long long scanId);
+    QJsonArray risk(long long scanId);
 
     bool setBaseline(long long scanId);
     long long baseline(); // -1 if none set

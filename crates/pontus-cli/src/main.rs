@@ -10,7 +10,7 @@ use pontus_core::scan::{OpenPort, ScanConfig, scan_hosts};
 use pontus_core::traceroute;
 use pontus_core::{
     Detector, IdentitySignals, KevCatalog, NativeDetector, NmapDetector, ObservationState,
-    PortObservation, PortProbe, Scope, Store, Vuln, band, host_risk, risk_score,
+    PortObservation, PortProbe, Scope, Store, Vuln,
 };
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr, TcpStream};
@@ -471,59 +471,30 @@ fn run_risk(db: &str, scan: Option<i64>) -> Result<(), Box<dyn std::error::Error
 
 /// Render hosts ranked by vulnerability risk (fix-first order, C-002).
 fn print_risk(store: &Store, scan_id: i64) -> Result<(), Box<dyn std::error::Error>> {
-    let stored = store.vulns_for_scan(scan_id)?;
-    if stored.is_empty() {
+    let hosts = store.risk_ranked(scan_id)?;
+    if hosts.is_empty() {
         println!("\nrisk: no vulnerabilities recorded for scan {scan_id}");
         return Ok(());
     }
 
-    // Group vulnerabilities by host.
-    let mut by_asset: HashMap<i64, (String, Option<String>, Vec<Vuln>)> = HashMap::new();
-    for av in stored {
-        let entry = by_asset.entry(av.asset_id).or_insert_with(|| {
-            (format!("{} {}", av.identity_kind, av.identity_value), av.ip.clone(), Vec::new())
-        });
-        entry.2.push(Vuln { cve_id: av.cve_id, cvss: av.cvss, epss: av.epss, kev: av.kev });
-    }
-
-    // Rank hosts by their worst vulnerability.
-    let mut hosts: Vec<HostRiskRow> = by_asset
-        .into_values()
-        .map(|(identity, ip, vulns)| {
-            let top = vulns
-                .iter()
-                .max_by(|a, b| risk_score(a).total_cmp(&risk_score(b)))
-                .cloned();
-            HostRiskRow { risk: host_risk(&vulns), identity, ip, count: vulns.len(), top }
-        })
-        .collect();
-    hosts.sort_by(|a, b| b.risk.total_cmp(&a.risk));
-
     println!("\nrisk (fix first):");
-    for row in hosts {
-        let top_desc = row
-            .top
-            .map(|v| format!("{} [{}]", v.cve_id, band(&v).as_str()))
+    for host in hosts {
+        let top_desc = host
+            .vulns
+            .first()
+            .map(|v| format!("{} [{}]", v.cve_id, v.band))
             .unwrap_or_default();
         println!(
-            "  {:>7.1}  {:<26} {:<16} {:>3} vuln(s)  top: {}",
-            row.risk,
-            row.identity,
-            row.ip.as_deref().unwrap_or("-"),
-            row.count,
+            "  {:>7.1}  {} {:<20} {:<16} {:>3} vuln(s)  top: {}",
+            host.risk,
+            host.identity_kind,
+            host.identity_value,
+            host.ip.as_deref().unwrap_or("-"),
+            host.vulns.len(),
             top_desc
         );
     }
     Ok(())
-}
-
-/// One row of the risk-ranked host view.
-struct HostRiskRow {
-    risk: f32,
-    identity: String,
-    ip: Option<String>,
-    count: usize,
-    top: Option<Vuln>,
 }
 
 fn kev_cache_path(cache: Option<String>) -> std::path::PathBuf {

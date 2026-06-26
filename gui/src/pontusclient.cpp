@@ -66,6 +66,10 @@ QJsonArray PontusClient::topology(long long scanId) {
     return handle_ ? parseAndFree(pontus_topology_json(handle_, scanId)) : QJsonArray{};
 }
 
+QJsonArray PontusClient::risk(long long scanId) {
+    return handle_ ? parseAndFree(pontus_risk_json(handle_, scanId)) : QJsonArray{};
+}
+
 bool PontusClient::setBaseline(long long scanId) {
     return handle_ ? pontus_set_baseline(handle_, scanId) : false;
 }

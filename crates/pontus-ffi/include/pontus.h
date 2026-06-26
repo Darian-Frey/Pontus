@@ -47,6 +47,10 @@ char *pontus_diff_json(PontusHandle *handle, long long from_scan, long long to_s
 /* JSON array of topology edges for a scan: [{"from":"..","to":".."}, ..]. Caller frees. */
 char *pontus_topology_json(PontusHandle *handle, long long scan_id);
 
+/* JSON array of hosts ranked by exploitation-weighted risk for a scan (worst
+ * first), each with its vulnerabilities worst first. Caller frees. */
+char *pontus_risk_json(PontusHandle *handle, long long scan_id);
+
 /* Designate a scan as the baseline to diff against. Returns true on success. */
 bool pontus_set_baseline(PontusHandle *handle, long long scan_id);
 

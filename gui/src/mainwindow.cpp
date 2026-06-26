@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "diffdialog.h"
 #include "heatmapdialog.h"
+#include "riskdialog.h"
 #include "scandialog.h"
 #include "topologydialog.h"
 
@@ -92,6 +93,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     QAction* topologyAct = viewMenu->addAction(QStringLiteral("&Topology…"));
     topologyAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+T")));
     connect(topologyAct, &QAction::triggered, this, &MainWindow::onTopology);
+    QAction* riskAct = viewMenu->addAction(QStringLiteral("&Risk / vulnerabilities…"));
+    riskAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+R")));
+    connect(riskAct, &QAction::triggered, this, &MainWindow::onRisk);
 
     // Left: filter box over the asset table (the F-029 workhorse, first cut).
     filter_ = new QLineEdit;
@@ -208,6 +212,15 @@ void MainWindow::onTopology() {
         return;
     }
     TopologyDialog dialog(&client_, this);
+    dialog.exec();
+}
+
+void MainWindow::onRisk() {
+    if (!client_.isOpen()) {
+        statusBar()->showMessage(QStringLiteral("Open a database first."));
+        return;
+    }
+    RiskDialog dialog(&client_, this);
     dialog.exec();
 }
 
