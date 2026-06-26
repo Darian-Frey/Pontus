@@ -51,7 +51,7 @@ Phases group features from [VISION.md](VISION.md). The ordering reflects D-006 (
 - [x] Optional Nmap-backed detector (`detect::NmapDetector` shells out to the user's own `nmap -sV` and parses its XML; never bundled, D-006/C-001; `pontus-cli --detector nmap`)
 - [ ] Native OS fingerprinting with an updatable corpus
 - [~] Scan diff + baseline designation + deviation view (all three landed early via the GUI: `diff_observations`, store-level baseline in a `meta` table, and the colour-coded drift view that defaults to the baseline)
-- [x] CVE matching (NVD/OSV) with EPSS + CISA KEV enrichment and composite risk score (D-009 hybrid; `intel` module: CPE-applicability matching via the NVD CPE+CVE APIs, EPSS + KEV enrichment, and the C-002 exploitation-weighted risk engine; `pontus-cli scan --assess-vulns` stores vulns and `pontus-cli risk` ranks hosts fix-first. GUI risk view still to add)
+- [x] CVE matching (NVD/OSV) with EPSS + CISA KEV enrichment and composite risk score (D-009 hybrid; `intel` module: CPE-applicability matching via the NVD CPE+CVE APIs, EPSS + KEV enrichment, and the C-002 exploitation-weighted risk engine; `pontus-cli scan --assess-vulns` stores vulns and `pontus-cli risk` ranks hosts fix-first; GUI risk view — `View ▸ Risk / vulnerabilities…` over a shared `store::risk_ranked` + FFI `risk_json`: hosts worst-first with a per-host CVE breakdown, band-coloured, KEV-badged)
 - [ ] TLS/SSL inspection (chain, expiry, weak ciphers, SNI, CT cross-ref)
 - [ ] HTTP tech fingerprinting
 

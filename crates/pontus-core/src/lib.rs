@@ -28,7 +28,10 @@ pub use scan::{HostPorts, OpenPort, ScanConfig, scan_hosts};
 pub use error::{Error, Result};
 pub use model::{IdentityKind, IdentitySignals, ObservationState, PortObservation};
 pub use scope::{Scope, ScopeError};
-pub use store::{AssetObservation, AssetSummary, AssetVuln, Edge, HostObservation, ScanRef, Store};
+pub use store::{
+    AssetObservation, AssetSummary, AssetVuln, Edge, HostObservation, HostRisk, RankedVuln,
+    ScanRef, Store,
+};
 
 #[cfg(test)]
 mod tests;

@@ -106,6 +106,28 @@ pub struct Edge {
     pub to: String,
 }
 
+/// A scored vulnerability within a host's risk view (F-015).
+#[derive(Debug, Clone, Serialize)]
+pub struct RankedVuln {
+    pub cve_id: String,
+    pub cvss: Option<f32>,
+    pub epss: Option<f32>,
+    pub kev: bool,
+    pub band: String,
+    pub score: f32,
+}
+
+/// A host ranked by vulnerability risk, with its vulnerabilities worst-first (F-015).
+#[derive(Debug, Clone, Serialize)]
+pub struct HostRisk {
+    pub asset_id: i64,
+    pub identity_kind: String,
+    pub identity_value: String,
+    pub ip: Option<String>,
+    pub risk: f32,
+    pub vulns: Vec<RankedVuln>,
+}
+
 /// A stored vulnerability joined to its asset identity, for the risk view (F-015).
 #[derive(Debug, Clone, Serialize)]
 pub struct AssetVuln {
@@ -325,6 +347,50 @@ impl Store {
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Hosts ranked by the C-002 exploitation-weighted risk model (F-015).
+    ///
+    /// Each host's vulnerabilities are scored ([`crate::intel::risk_score`]) and
+    /// sorted worst-first; the host's own risk is its worst vulnerability, and the
+    /// hosts are returned worst-first. This is the single scoring path shared by
+    /// the CLI `risk` command and the FFI/GUI risk view.
+    pub fn risk_ranked(&self, scan_id: i64) -> Result<Vec<HostRisk>> {
+        use crate::intel::{Vuln, band, risk_score};
+        let mut by_asset: std::collections::HashMap<i64, HostRisk> = std::collections::HashMap::new();
+        for av in self.vulns_for_scan(scan_id)? {
+            let v = Vuln { cve_id: av.cve_id.clone(), cvss: av.cvss, epss: av.epss, kev: av.kev };
+            let ranked = RankedVuln {
+                band: band(&v).as_str().to_string(),
+                score: risk_score(&v),
+                cve_id: av.cve_id,
+                cvss: av.cvss,
+                epss: av.epss,
+                kev: av.kev,
+            };
+            by_asset
+                .entry(av.asset_id)
+                .or_insert_with(|| HostRisk {
+                    asset_id: av.asset_id,
+                    identity_kind: av.identity_kind,
+                    identity_value: av.identity_value,
+                    ip: av.ip,
+                    risk: 0.0,
+                    vulns: Vec::new(),
+                })
+                .vulns
+                .push(ranked);
+        }
+        let mut hosts: Vec<HostRisk> = by_asset
+            .into_values()
+            .map(|mut h| {
+                h.vulns.sort_by(|a, b| b.score.total_cmp(&a.score));
+                h.risk = h.vulns.first().map_or(0.0, |v| v.score);
+                h
+            })
+            .collect();
+        hosts.sort_by(|a, b| b.risk.total_cmp(&a.risk));
+        Ok(hosts)
     }
 
     /// The topology edges recorded by a scan.

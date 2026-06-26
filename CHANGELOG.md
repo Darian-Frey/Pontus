@@ -10,7 +10,8 @@ and decision (`D-NNN`) registers in [docs/VISION.md](docs/VISION.md) and
 ## [Unreleased]
 
 No public release has been tagged yet. Phases 1 (Foundation) and 2 (GUI skeleton)
-are complete; everything below is on `main`, awaiting a first `0.1.0` tag.
+are complete and Phase 3 (Intelligence) is in progress; everything below is on
+`main`, awaiting a first `0.1.0` tag.
 
 ### Added
 
@@ -38,6 +39,14 @@ are complete; everything below is on `main`, awaiting a first `0.1.0` tag.
 - Service/port heatmap — a host × open-service grid, most-shared columns first, so shared exposure forms vertical bands (F-011).
 - Force-directed topology graph (`View ▸ Topology`) rendering the traceroute edges, scanner pinned at the centre, with pan and zoom (F-009).
 
+#### Phase 3 — intelligence
+
+- Service/version detection behind a host-level `Detector` trait: `NativeDetector`, a clean-room banner grammar (SSH/HTTP/FTP/SMTP/POP3/IMAP) plus well-known-port fallback, never derived from `nmap-service-probes` (F-012, C-001).
+- Optional `NmapDetector` that shells out to the user's own `nmap -sV` and parses its XML, never bundled (F-012, D-006/C-001); selected with `pontus-cli --detector nmap`.
+- Vulnerability intelligence (F-015, C-002): the exploitation-weighted risk model (`intel::risk_score`/`band`, KEV → EPSS → CVSS), the CISA KEV catalogue and FIRST EPSS feeds, and NVD CVE matching by CPE applicability (`virtualMatchString`, for version-accurate results) with EPSS + KEV enrichment. Hybrid data delivery (D-009): KEV/EPSS cached locally, NVD queried on demand.
+- `pontus-cli intel update`/`status`, `scan --assess-vulns` (stores matched CVEs in a `vulns` table), and `risk` (hosts ranked fix-first).
+- GUI risk view — `View ▸ Risk / vulnerabilities…` (Ctrl+R): a master/detail triage queue over a shared `store::risk_ranked` and FFI `pontus_risk_json`, hosts worst-first with a per-host CVE breakdown (band, CVSS, EPSS, KEV badge), band-coloured (F-015).
+
 #### Tooling and documentation
 
 - A root `Makefile` wrapping the build / `setcap` / run loop (`make build`/`cap`/`gui`/`scan`).
@@ -53,11 +62,13 @@ are complete; everything below is on `main`, awaiting a first `0.1.0` tag.
 - Service banners no longer carry trailing dots from a stripped CRLF (`scan::stateful::sanitise`).
 - Muted note text is now theme-adaptive (`applyMutedText`) instead of `palette(mid)`, which was unreadable on dark themes.
 - The topology graph settles its layout before drawing — no on-screen jitter — and drag-to-pan / scroll-to-zoom now work.
+- The GUI build resolves `libpontus_ffi` directly from `PONTUS_TARGET_DIR` instead of via `find_library`, whose cache is independent of the target dir — configuring debug then release no longer keeps linking the stale debug `.so`.
 
 ### Decisions
 
 - **D-006** — own the packet engine, make deep detection pluggable (supersedes D-005).
 - **D-007** — the asset inventory is the architectural core; scans are append-only observation events.
 - **D-008** — the GUI shells out to the privileged CLI for scans rather than holding `CAP_NET_RAW` itself.
+- **D-009** — hybrid vulnerability-data delivery: cache the small KEV/EPSS feeds locally for offline, testable scoring; query the NVD API on demand for CVE matching.
 
 [Unreleased]: https://github.com/Darian-Frey/Pontus

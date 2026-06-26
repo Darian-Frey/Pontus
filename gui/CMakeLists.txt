@@ -15,11 +15,15 @@ set(PONTUS_TARGET_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../target/debug"
     CACHE PATH "Cargo target directory containing libpontus_ffi")
 set(PONTUS_FFI_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/../crates/pontus-ffi/include")
 
-find_library(PONTUS_FFI_LIB NAMES pontus_ffi PATHS "${PONTUS_TARGET_DIR}" NO_DEFAULT_PATH)
-if(NOT PONTUS_FFI_LIB)
+# Resolve the shared library directly from PONTUS_TARGET_DIR rather than via
+# find_library, whose cache is independent of the target dir — configuring debug
+# then release would otherwise keep linking the stale debug .so.
+set(PONTUS_FFI_LIB "${PONTUS_TARGET_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}pontus_ffi${CMAKE_SHARED_LIBRARY_SUFFIX}")
+if(NOT EXISTS "${PONTUS_FFI_LIB}")
     message(FATAL_ERROR
-        "libpontus_ffi not found in ${PONTUS_TARGET_DIR}.\n"
-        "Run `cargo build` in the workspace root first, or pass -DPONTUS_TARGET_DIR=<dir>.")
+        "libpontus_ffi not found at ${PONTUS_FFI_LIB}.\n"
+        "Run `cargo build` (or `--release`) in the workspace root first, "
+        "or pass -DPONTUS_TARGET_DIR=<dir>.")
 endif()
 
 add_executable(pontus-gui
@@ -28,6 +32,7 @@ add_executable(pontus-gui
     src/scandialog.cpp
     src/diffdialog.cpp
     src/heatmapdialog.cpp
+    src/riskdialog.cpp
     src/topologyview.cpp
     src/topologydialog.cpp
     src/pontusclient.cpp
