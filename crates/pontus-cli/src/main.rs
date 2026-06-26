@@ -92,6 +92,16 @@ enum DetectorKind {
     Nmap,
 }
 
+/// Which OS detector to use (F-013, D-011).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum OsDetectorKind {
+    /// The built-in passive corpus (TCP-stack signature + TTL + banners).
+    Native,
+    /// Shell out to the user's own `nmap -O` for a version-range guess. Needs
+    /// raw-socket privilege, so run pontus-cli via sudo.
+    Nmap,
+}
+
 #[derive(Parser)]
 struct ScanArgs {
     /// Target range, e.g. 192.168.1.0/24 or a single host (IPv4 or IPv6).
@@ -130,6 +140,10 @@ struct ScanArgs {
     /// network (NVD/EPSS) and is best run after `intel update`.
     #[arg(long)]
     assess_vulns: bool,
+    /// OS detector: the passive built-in corpus, or shell out to your own `nmap -O`
+    /// for a version-range guess (needs sudo). Default: native.
+    #[arg(long, value_enum, default_value_t = OsDetectorKind::Native)]
+    os_detector: OsDetectorKind,
     /// OS fingerprint corpus (JSON) layered over the built-in clean-room defaults,
     /// so signatures can be added without a rebuild (F-013).
     #[arg(long, value_name = "PATH")]
@@ -247,12 +261,20 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         DetectorKind::Nmap => Box::new(NmapDetector::new()),
     };
 
-    // OS fingerprint corpus (F-013): the built-in clean-room defaults, with an
-    // optional user file layered on top so signatures update without a rebuild.
+    // OS detector (F-013, D-011): the passive corpus by default, or a shell-out to
+    // the user's own `nmap -O`. The corpus (built-in defaults plus an optional user
+    // file) feeds the native path.
     let os_corpus = match &args.os_corpus {
         Some(path) => OsCorpus::load(path)?,
         None => OsCorpus::builtin(),
     };
+    let os_detector: Box<dyn os::OsDetector> = match args.os_detector {
+        OsDetectorKind::Native => Box::new(os::NativeOsDetector::new(os_corpus)),
+        OsDetectorKind::Nmap => Box::new(os::NmapOsDetector::new()),
+    };
+    if args.os_detector == OsDetectorKind::Nmap {
+        println!("note: --os-detector nmap runs `nmap -O` per host, which needs root — run via sudo");
+    }
 
     // Vulnerability assessment (F-015) is opt-in: it hits the network. Load the
     // cached KEV catalogue and dedupe CVE lookups by (product, version) per scan.
@@ -260,6 +282,7 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
     let mut vuln_cache: HashMap<(String, Option<String>), Vec<Vuln>> = HashMap::new();
 
     let mut up = 0u64;
+    let mut os_guessed = 0u64;
     for host in &hosts {
         let host_ports = scanned.get(&host.ip);
         let open: Vec<OpenPort> = host_ports.map(|hp| hp.open.clone()).unwrap_or_default();
@@ -303,10 +326,10 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
             });
         }
 
-        // OS fingerprint from the SYN-ACK stack signature (TTL, window, DF, TCP
-        // option layout) and volunteered banners (F-013). Fall back to the ICMP
-        // echo-reply TTL so portless-but-pingable hosts still get a family guess
-        // (IMP-006).
+        // OS guess from the chosen detector (F-013). The native path scores the
+        // SYN-ACK stack signature (TTL, window, DF, TCP option layout) and banners,
+        // falling back to the ICMP echo-reply TTL for portless hosts (IMP-006); the
+        // nmap path ignores these and probes the host itself.
         let os_guess = {
             let stack = host_ports.map(|hp| &hp.stack);
             let banners = host_ports
@@ -319,8 +342,11 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
                 opts_layout: stack.and_then(|s| s.opts_layout.clone()),
                 banners,
             };
-            os::fingerprint(&sig, &os_corpus)
+            os_detector.detect(host.ip, &sig)
         };
+        if os_guess.is_some() {
+            os_guessed += 1;
+        }
 
         // Resolve to a durable asset (ARP-discovered hosts carry a MAC — the
         // strongest identity signal, F-004) and append one observation.
@@ -381,6 +407,13 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
                 stack.df.map_or("-", |d| if d { "set" } else { "clear" }),
             );
         }
+    }
+    // `nmap -O` returning nothing for every host usually means it lacked privilege.
+    if args.os_detector == OsDetectorKind::Nmap && up > 0 && os_guessed == 0 {
+        eprintln!(
+            "note: nmap produced no OS match for any host — `nmap -O` needs root; \
+             re-run pontus-cli via sudo, and ensure nmap is installed"
+        );
     }
 
     // Topology pass: traceroute each live host and record path edges (F-009).

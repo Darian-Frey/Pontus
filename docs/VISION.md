@@ -126,7 +126,7 @@ Subnet-wide heatmap of services/ports to spot shared exposure. **Acceptance:** h
 
 ### F-013 OS fingerprinting
 **Priority:** Should · **Status:** Done (core + CLI; D-011)
-Native, community-updatable fingerprint corpus. Family-level guess from passive signals (p0f-style, no active probes) — the SYN-ACK's TCP-option layout (the strongest discriminator: Linux `MSTNW` vs Windows `MNWNNS` vs macOS), initial TTL, window and DF bit, plus volunteered service-banner OS tokens — scored against a clean-room corpus that layers a user JSON file over built-in defaults (C-001; never `nmap-os-db`). `pontus-cli scan` records the guess; `--os-corpus <path>` adds signatures without a rebuild. **Acceptance:** correctly buckets a handful of reference OSes by family; corpus is updatable without a rebuild.
+Native, community-updatable fingerprint corpus. Family-level guess from passive signals (p0f-style, no active probes) — the SYN-ACK's TCP-option layout (the strongest discriminator: Linux `MSTNW` vs Windows `MNWNNS` vs macOS), initial TTL, window and DF bit, plus volunteered service-banner OS tokens — scored against a clean-room corpus that layers a user JSON file over built-in defaults (C-001; never `nmap-os-db`). `pontus-cli scan` records the guess; `--os-corpus <path>` adds signatures without a rebuild. An optional `--os-detector nmap` backend shells out to the user's own `nmap -O` for a version-range guess (D-006-style, no bundled data). **Acceptance:** correctly buckets a handful of reference OSes by family; corpus is updatable without a rebuild.
 
 ### F-014 Scan diff & baselines
 **Priority:** Must · **Status:** Not started

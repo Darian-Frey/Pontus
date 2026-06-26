@@ -28,7 +28,9 @@ pub use discovery::{DiscoveredHost, DiscoveryError, Method};
 pub use scan::{HostPorts, OpenPort, ScanConfig, scan_hosts};
 pub use error::{Error, Result};
 pub use model::{IdentityKind, IdentitySignals, ObservationState, PortObservation};
-pub use os::{OsCorpus, OsGuess, OsSignals, fingerprint};
+pub use os::{
+    NativeOsDetector, NmapOsDetector, OsCorpus, OsDetector, OsGuess, OsSignals, fingerprint,
+};
 pub use scope::{Scope, ScopeError};
 pub use store::{
     AssetObservation, AssetSummary, AssetVuln, Edge, HostObservation, HostRisk, RankedVuln,
