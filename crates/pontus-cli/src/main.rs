@@ -184,6 +184,14 @@ struct ScanArgs {
     /// so signatures can be added without a rebuild (F-013).
     #[arg(long, value_name = "PATH")]
     os_corpus: Option<String>,
+    /// Deep-inspect open TLS/HTTP ports: TLS protocols/ciphers/cert (F-016) and
+    /// web technology stack (F-017), recorded on the observation. Adds handshakes
+    /// and requests, so it is opt-in.
+    #[arg(long)]
+    inspect: bool,
+    /// Per-endpoint timeout for `--inspect`, milliseconds.
+    #[arg(long, default_value_t = 5000)]
+    inspect_timeout_ms: u64,
     /// Skip the traceroute / topology pass.
     #[arg(long)]
     no_traceroute: bool,
@@ -342,6 +350,7 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
                     proto: p.proto.to_string(),
                     service: service.map(|s| s.name.clone()),
                     version: service.and_then(|s| s.version_string()),
+                    ..Default::default()
                 }
             })
             .collect();
@@ -361,7 +370,32 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
                 proto: "udp".to_string(),
                 service: r.response.clone().or_else(|| Some(r.state.as_str().to_string())),
                 version: None,
+                ..Default::default()
             });
+        }
+
+        // Deep inspection (F-016/F-017): on open TLS/HTTP ports, inspect TLS and
+        // fingerprint the web stack, attaching the findings to the port observation.
+        // Opt-in — it adds handshakes/requests — and uses the resolved hostname for
+        // SNI / the request URL where available.
+        if args.inspect {
+            let sni = hostname.clone().unwrap_or_default();
+            let url_host = hostname.clone().unwrap_or_else(|| host.ip.to_string());
+            let timeout = Duration::from_millis(args.inspect_timeout_ms);
+            for po in observed_ports.iter_mut().filter(|p| p.proto == "tcp") {
+                let addr = std::net::SocketAddr::new(host.ip, po.port);
+                if matches!(po.port, 443 | 8443) {
+                    let report = pontus_core::tls::inspect(addr, &sni, timeout);
+                    po.tls = Some(tls_to_obs(&report));
+                }
+                if matches!(po.port, 80 | 443 | 8080 | 8000 | 8443) {
+                    let scheme = if matches!(po.port, 443 | 8443) { "https" } else { "http" };
+                    let url = format!("{scheme}://{url_host}:{}/", po.port);
+                    if let Ok(fp) = pontus_core::webtech::fingerprint(&url, timeout) {
+                        po.tech = fp.techs.iter().map(tech_to_obs).collect();
+                    }
+                }
+            }
         }
 
         // OS guess from the chosen detector (F-013). The native path scores the
@@ -444,6 +478,22 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
                 stack.window.map_or("-".to_string(), |w| w.to_string()),
                 stack.df.map_or("-", |d| if d { "set" } else { "clear" }),
             );
+        }
+        // Deep-inspection findings recorded on the ports this scan (F-016/F-017).
+        for po in &state.open_ports {
+            if let Some(tls) = &po.tls
+                && !tls.findings.is_empty()
+            {
+                println!("         tls {}: {}", po.port, tls.findings.join("; "));
+            }
+            if !po.tech.is_empty() {
+                let names: Vec<String> = po
+                    .tech
+                    .iter()
+                    .map(|t| t.version.as_ref().map_or_else(|| t.name.clone(), |v| format!("{} {v}", t.name)))
+                    .collect();
+                println!("         web {}: {}", po.port, names.join(", "));
+            }
         }
     }
     // `nmap -O` returning nothing for every host usually means it lacked privilege.
@@ -722,6 +772,26 @@ fn run_http(args: HttpArgs) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Compact a full TLS report into the storable observation summary (F-016).
+fn tls_to_obs(r: &pontus_core::TlsReport) -> pontus_core::TlsObservation {
+    pontus_core::TlsObservation {
+        protocols: r.protocols.iter().filter(|p| p.supported).map(|p| p.version.label().to_string()).collect(),
+        weak_ciphers: r.weak_ciphers.clone(),
+        cert_subject: r.cert.as_ref().map(|c| c.subject.clone()),
+        cert_not_after: r.cert.as_ref().map(|c| c.not_after),
+        self_signed: r.cert.as_ref().is_some_and(|c| c.self_signed),
+        findings: r.findings.iter().map(|f| f.describe()).collect(),
+    }
+}
+
+fn tech_to_obs(t: &pontus_core::Tech) -> pontus_core::TechObservation {
+    pontus_core::TechObservation {
+        name: t.name.clone(),
+        version: t.version.clone(),
+        category: t.category.as_str().to_string(),
+    }
+}
+
 fn print_web_fingerprint(fp: &pontus_core::WebFingerprint) {
     println!("status: {}", fp.status);
     if fp.techs.is_empty() {
@@ -860,6 +930,7 @@ fn probe(host: IpAddr, ports: &[u16], timeout: Duration) -> Option<ObservationSt
                     proto: "tcp".to_string(),
                     service: None,
                     version: None,
+                    ..Default::default()
                 });
             }
             Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => reachable = true,
