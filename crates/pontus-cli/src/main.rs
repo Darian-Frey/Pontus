@@ -437,14 +437,23 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         up += 1;
 
         // Match detected services to CVEs and enrich (F-015); deduped per product.
+        // Report each assessment so a "no vulns" outcome isn't silent — it's either
+        // "no versioned product detected" or an NVD lookup that found/returned none.
         if args.assess_vulns {
             for (port, service) in &services {
                 let Some(product) = &service.product else { continue };
                 let key = (product.clone(), service.version.clone());
                 let vulns = vuln_cache.entry(key).or_insert_with(|| {
-                    pontus_core::intel::assess(product, service.version.as_deref(), &kev)
-                        .unwrap_or_default()
+                    match pontus_core::intel::assess(product, service.version.as_deref(), &kev) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            eprintln!("note: vuln assessment for {product} failed: {e}");
+                            Vec::new()
+                        }
+                    }
                 });
+                let ver = service.version.as_deref().unwrap_or("(no version)");
+                println!("       vulns {port}: {product} {ver} → {} CVE(s)", vulns.len());
                 for v in vulns.iter() {
                     store.record_vuln(scan_id, asset_id, *port, v)?;
                 }
@@ -678,6 +687,15 @@ fn kev_cache_path(cache: Option<String>) -> std::path::PathBuf {
 fn default_cache_dir() -> std::path::PathBuf {
     if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
         return std::path::PathBuf::from(xdg).join("pontus");
+    }
+    // Privileged scans run under sudo (HOME=/root), but `intel update` is run as
+    // the user — so prefer the invoking user's cache, where the catalogue actually
+    // lives, rather than root's (BUG-008).
+    if let Ok(user) = std::env::var("SUDO_USER") {
+        let home = std::path::PathBuf::from("/home").join(&user);
+        if home.is_dir() {
+            return home.join(".cache").join("pontus");
+        }
     }
     if let Ok(home) = std::env::var("HOME") {
         return std::path::PathBuf::from(home).join(".cache").join("pontus");

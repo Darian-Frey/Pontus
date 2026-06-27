@@ -75,3 +75,29 @@ fn audit_record_persists_targets_scope_and_operator() {
     assert_eq!(scan.targets, "192.168.1.0/24");
     assert!(scan.finished_at.is_some(), "finish_scan stamps a completion time");
 }
+
+#[test]
+fn risk_ranked_dedupes_a_cve_recorded_on_multiple_ports() {
+    use pontus_core::Vuln;
+
+    let store = Store::open_in_memory().unwrap();
+    let s = store.begin_scan("n", "s", None).unwrap();
+    let a = store.record(&sig(Some("aa:bb:cc:dd:ee:ff"), "192.168.1.10"), s, &up()).unwrap();
+
+    // The same CVE on 80 and 443 (e.g. a web server on both), plus a second CVE.
+    let shared = Vuln { cve_id: "CVE-2023-44487".into(), cvss: Some(7.5), epss: Some(1.0), kev: true };
+    let other = Vuln { cve_id: "CVE-2009-3555".into(), cvss: Some(9.8), epss: Some(0.8), kev: false };
+    store.record_vuln(s, a, 80, &shared).unwrap();
+    store.record_vuln(s, a, 443, &shared).unwrap();
+    store.record_vuln(s, a, 80, &other).unwrap();
+    store.finish_scan(s).unwrap();
+
+    let ranked = store.risk_ranked(s).unwrap();
+    assert_eq!(ranked.len(), 1);
+    let host = &ranked[0];
+    // Two unique CVEs, not three — the shared one collapses across ports.
+    assert_eq!(host.vulns.len(), 2, "CVE deduped across ports");
+    assert_eq!(host.vulns.iter().filter(|v| v.cve_id == "CVE-2023-44487").count(), 1);
+    // KEV dominates, so the deduped KEV CVE remains the top finding.
+    assert_eq!(host.vulns[0].cve_id, "CVE-2023-44487");
+}

@@ -389,6 +389,11 @@ impl Store {
         let mut hosts: Vec<HostRisk> = by_asset
             .into_values()
             .map(|mut h| {
+                // The same CVE can be recorded on several ports (e.g. a web server
+                // on 80 and 443); the triage view is CVE-centric, so collapse to
+                // one entry per CVE — you fix the CVE once, not per port.
+                let mut seen = std::collections::HashSet::new();
+                h.vulns.retain(|v| seen.insert(v.cve_id.clone()));
                 h.vulns.sort_by(|a, b| b.score.total_cmp(&a.score));
                 h.risk = h.vulns.first().map_or(0.0, |v| v.score);
                 h
