@@ -94,6 +94,17 @@ candidate.
 
 ## Applied
 
+### IMP-013: Port-range syntax and a top-ports preset
+
+- **Status:** applied (2026-06-27)
+- **Found:** 2026-06-27, noticing the heatmap only ever shows the few ports a scan explicitly lists.
+- **Location:** [crates/pontus-cli/src/main.rs](../crates/pontus-cli/src/main.rs) — `parse_ports`, `resolve_ports`, `TOP_PORTS`, the `--top-ports` flag.
+- **Effort:** small
+- **Description.** `parse_ports` accepted only a comma list of single ports — no ranges, no all-ports — so broad scanning was impractical and most real services were never probed.
+- **Proposal.** Extend `parse_ports` to accept ranges and `-` (all of 1–65535), mixed and de-duplicated (`80,443,8000-8100`, `1-1024`, `-`); add `--top-ports <N>` over a curated clean-room common-ports list (`TOP_PORTS`), unioned with `--ports`. The range syntax applies to `--udp-ports` too (same parser).
+- **Trade-offs.** Wide scans are slower/noisier, so breadth stays opt-in and the default is unchanged; `-` against /24 is fine because scope still bounds the hosts.
+- **Notes.** `TOP_PORTS` is written from public well-known-port knowledge, not Nmap's frequency data (C-001). Six unit tests on `parse_ports`/`resolve_ports`; live-verified a range scan (`8078-8082` → found 8080). Port 0 is dropped.
+
 ### IMP-012: Dedupe the risk view's per-host CVE list by CVE
 
 - **Status:** applied (2026-06-27)

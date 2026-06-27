@@ -155,8 +155,13 @@ struct ScanArgs {
     #[arg(long, default_value_t = 1000)]
     discovery_timeout_ms: u64,
     /// TCP ports to scan on each live host (hybrid SYN sweep → connect deep pass).
+    /// Accepts single ports, ranges and `-` for all: `80,443,8000-8100`, `1-1024`, `-`.
     #[arg(long, default_value = "22,80,443,445,3389,8080")]
     ports: String,
+    /// Also scan the N most common TCP service ports (a curated preset). Unioned
+    /// with `--ports`; e.g. `--top-ports 1000`.
+    #[arg(long, value_name = "N")]
+    top_ports: Option<u16>,
     /// How long the stateless SYN sweep listens for SYN-ACKs, milliseconds.
     #[arg(long, default_value_t = 800)]
     sweep_timeout_ms: u64,
@@ -238,7 +243,7 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
     // Scope is built and validated before anything else happens.
     let scope = Scope::parse(&args.scope)?;
     let targets: IpNet = pontus_core::scope::parse_cidr_or_host(&args.targets)?;
-    let ports = parse_ports(&args.ports)?;
+    let ports = resolve_ports(&args.ports, args.top_ports)?;
     let port_timeout = Duration::from_millis(args.timeout_ms);
     let discovery_timeout = Duration::from_millis(args.discovery_timeout_ms);
 
@@ -993,8 +998,113 @@ fn truncate(s: &str, n: usize) -> String {
     }
 }
 
+/// Parse a port spec into a sorted, de-duplicated list. Accepts single ports,
+/// inclusive ranges, and `-` as shorthand for all of 1–65535, mixed freely:
+/// `80,443,8000-8100`, `1-1024`, `-`. Port 0 is dropped (IMP-013).
 fn parse_ports(spec: &str) -> Result<Vec<u16>, String> {
-    spec.split(',')
-        .map(|p| p.trim().parse::<u16>().map_err(|_| format!("invalid port '{p}'")))
-        .collect()
+    let mut ports = std::collections::BTreeSet::new();
+    for part in spec.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        if part == "-" {
+            ports.extend(1..=u16::MAX);
+        } else if let Some((a, b)) = part.split_once('-') {
+            let start: u16 = a.trim().parse().map_err(|_| format!("invalid port '{}'", a.trim()))?;
+            let end: u16 = b.trim().parse().map_err(|_| format!("invalid port '{}'", b.trim()))?;
+            if start > end {
+                return Err(format!("invalid range '{part}' (start > end)"));
+            }
+            ports.extend(start..=end);
+        } else {
+            ports.insert(part.parse::<u16>().map_err(|_| format!("invalid port '{part}'"))?);
+        }
+    }
+    ports.remove(&0); // port 0 is not a valid target
+    if ports.is_empty() {
+        return Err("no ports specified".to_string());
+    }
+    Ok(ports.into_iter().collect())
+}
+
+/// Resolve the TCP port list from `--ports` plus an optional `--top-ports N`
+/// preset, unioned and de-duplicated (IMP-013).
+fn resolve_ports(spec: &str, top: Option<u16>) -> Result<Vec<u16>, String> {
+    let mut ports: std::collections::BTreeSet<u16> = parse_ports(spec)?.into_iter().collect();
+    if let Some(n) = top {
+        let n = (n as usize).min(TOP_PORTS.len());
+        ports.extend(TOP_PORTS.iter().take(n).copied());
+    }
+    Ok(ports.into_iter().collect())
+}
+
+/// A curated, clean-room list of common TCP service ports, roughly by prevalence,
+/// for the `--top-ports <N>` preset. Written from public well-known-port knowledge
+/// (IANA / common service defaults), not from Nmap's frequency data (C-001).
+const TOP_PORTS: &[u16] = &[
+    80, 443, 22, 21, 25, 23, 53, 110, 143, 139, 445, 135, 3389, 3306, 8080, 1723, 111, 995, 993,
+    5900, 1025, 587, 8888, 199, 1720, 465, 548, 113, 81, 6001, 10000, 514, 5060, 179, 1026, 2000,
+    8443, 8000, 32768, 554, 26, 1433, 49152, 2001, 515, 8008, 49154, 1027, 5666, 646, 5000, 5631,
+    631, 49153, 8081, 2049, 88, 79, 5800, 106, 2121, 1110, 49155, 6000, 513, 990, 5357, 427, 49156,
+    543, 544, 5101, 144, 7, 389, 8009, 3128, 444, 9999, 5009, 7070, 5190, 3000, 5432, 1900, 3986,
+    13, 1029, 9, 6646, 49157, 1028, 873, 1755, 2717, 4899, 9100, 119, 37, 1000, 3001, 5001, 82,
+    10010, 1030, 9090, 2107, 1024, 2103, 6004, 1801, 5050, 19, 8031, 1041, 255, 1048, 1049, 6379,
+    27017, 9200, 11211, 32400,
+];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_single_ports_sorted_and_deduped() {
+        assert_eq!(parse_ports("443,80,80").unwrap(), vec![80, 443]);
+    }
+
+    #[test]
+    fn parses_ranges_and_mixed_specs() {
+        assert_eq!(parse_ports("1-5").unwrap(), vec![1, 2, 3, 4, 5]);
+        assert_eq!(parse_ports("80,443,8000-8002").unwrap(), vec![80, 443, 8000, 8001, 8002]);
+        // Overlapping range + single collapse.
+        assert_eq!(parse_ports("20-22,21").unwrap(), vec![20, 21, 22]);
+    }
+
+    #[test]
+    fn dash_means_all_ports() {
+        let all = parse_ports("-").unwrap();
+        assert_eq!(all.len(), 65535);
+        assert_eq!(*all.first().unwrap(), 1);
+        assert_eq!(*all.last().unwrap(), 65535);
+    }
+
+    #[test]
+    fn port_zero_is_dropped_and_empty_is_an_error() {
+        assert_eq!(parse_ports("0,22").unwrap(), vec![22]);
+        assert!(parse_ports("0").is_err());
+        assert!(parse_ports("").is_err());
+    }
+
+    #[test]
+    fn rejects_bad_ports_and_reversed_ranges() {
+        assert!(parse_ports("nope").is_err());
+        assert!(parse_ports("70000").is_err()); // > u16
+        assert!(parse_ports("100-50").is_err());
+    }
+
+    #[test]
+    fn top_ports_unions_with_explicit_ports() {
+        let p = resolve_ports("32400", Some(5)).unwrap();
+        // The five most common ports plus the explicit one, sorted/deduped.
+        for common in &TOP_PORTS[..5] {
+            assert!(p.contains(common), "missing top port {common}");
+        }
+        assert!(p.contains(&32400));
+        // N beyond the list length is clamped, not an error.
+        assert_eq!(resolve_ports("80", Some(9999)).unwrap().len(), {
+            let mut s: std::collections::BTreeSet<u16> = TOP_PORTS.iter().copied().collect();
+            s.insert(80);
+            s.len()
+        });
+    }
 }
