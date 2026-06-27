@@ -62,13 +62,13 @@ are complete and Phase 3 (Intelligence) is in progress; everything below is on
 
 - The scan diff keys on `(proto, port)` (`PortRef`), so `tcp/53` and `udp/53` are distinct findings.
 - The stateless SYN sweep was rebuilt around `BatchSender` with set-based reply matching to scale to wide ranges.
+- `--ports` (and `--udp-ports`) now accept ranges and mixed specs — `80,443,8000-8100`, `1-1024`, `-` for all of 1–65535 — de-duplicated and sorted; plus a `--top-ports <N>` preset over a curated clean-room common-ports list, unioned with `--ports`. Broad scanning is now a one-liner instead of a hand-typed list (F-002, IMP-013).
 
 ### Fixed
 
 - The KEV cache is now found under `sudo`: `default_cache_dir` prefers the invoking user's cache (`/home/$SUDO_USER/.cache/pontus`) so a catalogue cached by `intel update` (run as the user) is used by a privileged `scan --assess-vulns` (BUG-008).
 - Vulnerability assessment is no longer silent: each assessment prints `vulns <port>: <product> <version> → N CVE(s)`, and an NVD lookup error is reported instead of being swallowed to an empty result (BUG-009).
 - The risk view's per-host CVE list is deduped by CVE in `risk_ranked`, so a product on multiple ports (e.g. 80 and 443) no longer lists each CVE twice or inflates the count (IMP-012).
-
 - Service banners no longer carry trailing dots from a stripped CRLF (`scan::stateful::sanitise`).
 - Muted note text is now theme-adaptive (`applyMutedText`) instead of `palette(mid)`, which was unreadable on dark themes.
 - The topology graph settles its layout before drawing — no on-screen jitter — and drag-to-pan / scroll-to-zoom now work.
