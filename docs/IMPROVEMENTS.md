@@ -26,17 +26,6 @@ candidate.
 
 ## Suggested
 
-### IMP-014: Expose the richer scan options in the GUI New-scan dialog
-
-- **Status:** suggested
-- **Found:** 2026-06-27 — a GUI scan found far fewer services than a terminal scan, because the dialog only offers a subset of the CLI's options.
-- **Location:** [gui/src/scandialog.cpp](../gui/src/scandialog.cpp).
-- **Effort:** medium
-- **Description.** The New-scan dialog exposes targets/scope/TCP ports/UDP ports/db/operator/skip-rDNS, but not `--top-ports`, `--detector`, `--os-detector`, `--assess-vulns` or `--inspect`. So GUI scans use a narrow port set and skip vuln/TLS/web enrichment — making the GUI feel less capable and less consistent than the CLI (it was the *cause* behind the heatmap confusion in BUG-010).
-- **Proposal.** Add controls — a top-ports spinbox, a detector dropdown, and `--assess-vulns` / `--inspect` checkboxes — and thread them into the shelled-out command (D-008). Note in the dialog that some need privilege/network.
-- **Trade-offs.** More dialog surface; `--assess-vulns`/`--inspect` lengthen scans and hit the network, and the nmap OS backend needs sudo — so default them off with clear labels.
-- **Notes.** The engine already supports all of these via the CLI; this is purely GUI plumbing. Pairs with BUG-010 (the heatmap is now scan-scoped, so once GUI scans cover more ports the snapshot is both consistent *and* complete).
-
 ### IMP-002: Support an NVD API key (and backoff) on the CVE-matching path
 
 - **Status:** suggested
@@ -104,6 +93,28 @@ candidate.
 - **Notes.** The remaining half of [IMP-010](#imp-010-fold-web-tech-fingerprinting-into-scans); mirrors the `OsCorpus` design.
 
 ## Applied
+
+### IMP-015: Feed web-tech fingerprints into vulnerability assessment
+
+- **Status:** applied (2026-06-27)
+- **Found:** 2026-06-27 — a GUI scan with `--assess-vulns --inspect` but the *native* detector recorded no CVEs, because the native detector can't name an HTTP product (an HTTP server sends nothing on a bare connect), and `--inspect`'s web-tech result (which *does* identify nginx) wasn't reaching the assessor.
+- **Location:** [crates/pontus-cli/src/main.rs](../crates/pontus-cli/src/main.rs) — the `--assess-vulns` loop.
+- **Effort:** small
+- **Description.** `--assess-vulns` only assessed the service detector's products. With the clean-room native detector that meant web servers were never matched, so users needed `--detector nmap` to get web CVEs.
+- **Proposal.** Also assess the web technologies attached to each port by `--inspect`, deduped with the detector's products; `record_vuln`'s `INSERT OR IGNORE` collapses any overlap. So native + `--inspect` now yields web-server CVEs with no nmap dependency.
+- **Trade-offs.** More NVD lookups per scan (nginx, jQuery, Bootstrap, …) — paced by the per-product cache and gated behind `--assess-vulns`; a bogus product just returns 0.
+- **Notes.** Live-verified: `scan --assess-vulns --inspect` (native) now prints `vulns <port>: <tech> → N CVE(s)` for web-tech findings. Pairs with IMP-014 (the GUI can now run this combination).
+
+### IMP-014: Expose the richer scan options in the GUI New-scan dialog
+
+- **Status:** applied (2026-06-27)
+- **Found:** 2026-06-27 — a GUI scan found far fewer services than a terminal scan, because the dialog only offered a subset of the CLI's options.
+- **Location:** [gui/src/scandialog.cpp](../gui/src/scandialog.cpp), [gui/src/scandialog.h](../gui/src/scandialog.h).
+- **Effort:** medium
+- **Description.** The New-scan dialog exposed targets/scope/TCP ports/UDP ports/db/operator/skip-rDNS, but not `--top-ports`, `--detector`, `--assess-vulns` or `--inspect` — so GUI scans were narrow and unenriched, the cause behind the "GUI scanning is broken" reports.
+- **Proposal.** Add a Top-ports field, a Detector dropdown (native / nmap), and Assess-vulnerabilities / Deep-inspect checkboxes; thread them into the shelled-out command (D-008) and persist them in the saved profiles.
+- **Trade-offs.** More dialog surface, and the enrichment options lengthen scans / hit the network — so they default off with labels saying so. `--os-detector nmap` (needs sudo) is deliberately left out for now.
+- **Notes.** Pure GUI plumbing over existing CLI options. Pairs with BUG-010 — a GUI scan can now cover broad ports *and* TLS/web/vuln enrichment, so the heatmap and risk views populate from a GUI-launched scan, consistently.
 
 ### IMP-013: Port-range syntax and a top-ports preset
 

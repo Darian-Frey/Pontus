@@ -63,6 +63,8 @@ are complete and Phase 3 (Intelligence) is in progress; everything below is on
 - The scan diff keys on `(proto, port)` (`PortRef`), so `tcp/53` and `udp/53` are distinct findings.
 - The stateless SYN sweep was rebuilt around `BatchSender` with set-based reply matching to scale to wide ranges.
 - `--ports` (and `--udp-ports`) now accept ranges and mixed specs — `80,443,8000-8100`, `1-1024`, `-` for all of 1–65535 — de-duplicated and sorted; plus a `--top-ports <N>` preset over a curated clean-room common-ports list, unioned with `--ports`. Broad scanning is now a one-liner instead of a hand-typed list (F-002, IMP-013).
+- The GUI New-scan dialog now exposes the richer scan options — a Top-ports field, a Detector dropdown (native / nmap), and Assess-vulnerabilities / Deep-inspect (TLS+HTTP) checkboxes — threaded into the shelled-out command and saved with profiles, so a GUI-launched scan can be as thorough as a CLI one and populate the risk/heatmap/deep-inspection views (F-010, IMP-014).
+- `--assess-vulns` now also assesses the web technologies found by `--inspect`, not just the service detector's products — so the clean-room native detector plus `--inspect` matches web-server CVEs (e.g. nginx) without needing `--detector nmap` (F-015, IMP-015).
 
 ### Fixed
 

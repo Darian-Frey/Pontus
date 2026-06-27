@@ -55,8 +55,17 @@ ScanDialog::ScanDialog(QString cliPath, const QString& defaultDb, QWidget* paren
     scopeLayout->addWidget(copyScope);
 
     tcpPorts_ = new QLineEdit(QStringLiteral("22,80,443,445,3389,8080"));
+    tcpPorts_->setPlaceholderText(QStringLiteral("ranges ok — 80,443,8000-8100 or 1-1024 or -"));
+    topPorts_ = new QLineEdit;
+    topPorts_->setPlaceholderText(QStringLiteral("optional — also the N most common TCP ports, e.g. 100"));
     udpPorts_ = new QLineEdit;
     udpPorts_->setPlaceholderText(QStringLiteral("optional — e.g. 53,123,161,1900,5353"));
+
+    detector_ = new QComboBox;
+    detector_->addItem(QStringLiteral("native (clean-room)"));
+    detector_->addItem(QStringLiteral("nmap -sV (your install)"));
+    assessVulns_ = new QCheckBox(QStringLiteral("Assess vulnerabilities (CVE/EPSS/KEV) — hits the network"));
+    inspect_ = new QCheckBox(QStringLiteral("Deep-inspect TLS / HTTP on open ports"));
 
     db_ = new QLineEdit(defaultDb);
     auto* browse = new QPushButton(QStringLiteral("Browse…"));
@@ -75,9 +84,13 @@ ScanDialog::ScanDialog(QString cliPath, const QString& defaultDb, QWidget* paren
     form->addRow(QStringLiteral("Targets"), targets_);
     form->addRow(QStringLiteral("Scope *"), scopeRow);
     form->addRow(QStringLiteral("TCP ports"), tcpPorts_);
+    form->addRow(QStringLiteral("Top ports"), topPorts_);
     form->addRow(QStringLiteral("UDP ports"), udpPorts_);
+    form->addRow(QStringLiteral("Detector"), detector_);
     form->addRow(QStringLiteral("Database"), dbRow);
     form->addRow(QStringLiteral("Operator"), operator_);
+    form->addRow(QString(), assessVulns_);
+    form->addRow(QString(), inspect_);
     form->addRow(QString(), noRdns_);
 
     auto* scopeNote = new QLabel(
@@ -148,9 +161,22 @@ void ScanDialog::onRun() {
     if (!tcp.isEmpty()) {
         args << QStringLiteral("--ports") << tcp;
     }
+    const QString top = topPorts_->text().trimmed();
+    if (!top.isEmpty()) {
+        args << QStringLiteral("--top-ports") << top;
+    }
     const QString udp = udpPorts_->text().trimmed();
     if (!udp.isEmpty()) {
         args << QStringLiteral("--udp-ports") << udp;
+    }
+    if (detector_->currentIndex() == 1) {
+        args << QStringLiteral("--detector") << QStringLiteral("nmap");
+    }
+    if (assessVulns_->isChecked()) {
+        args << QStringLiteral("--assess-vulns");
+    }
+    if (inspect_->isChecked()) {
+        args << QStringLiteral("--inspect");
     }
     const QString op = operator_->text().trimmed();
     if (!op.isEmpty()) {
@@ -193,7 +219,11 @@ void ScanDialog::setRunning(bool running) {
     targets_->setEnabled(!running);
     scope_->setEnabled(!running);
     tcpPorts_->setEnabled(!running);
+    topPorts_->setEnabled(!running);
     udpPorts_->setEnabled(!running);
+    detector_->setEnabled(!running);
+    assessVulns_->setEnabled(!running);
+    inspect_->setEnabled(!running);
     db_->setEnabled(!running);
     operator_->setEnabled(!running);
     noRdns_->setEnabled(!running);
@@ -222,7 +252,11 @@ void ScanDialog::onProfileSelected(int index) {
     targets_->setText(settings.value(QStringLiteral("targets")).toString());
     scope_->setText(settings.value(QStringLiteral("scope")).toString());
     tcpPorts_->setText(settings.value(QStringLiteral("tcp")).toString());
+    topPorts_->setText(settings.value(QStringLiteral("top")).toString());
     udpPorts_->setText(settings.value(QStringLiteral("udp")).toString());
+    detector_->setCurrentIndex(settings.value(QStringLiteral("detector")).toInt());
+    assessVulns_->setChecked(settings.value(QStringLiteral("assess_vulns")).toBool());
+    inspect_->setChecked(settings.value(QStringLiteral("inspect")).toBool());
     operator_->setText(settings.value(QStringLiteral("operator")).toString());
     noRdns_->setChecked(settings.value(QStringLiteral("no_rdns")).toBool());
     settings.endGroup();
@@ -243,7 +277,11 @@ void ScanDialog::onSaveProfile() {
     settings.setValue(QStringLiteral("targets"), targets_->text());
     settings.setValue(QStringLiteral("scope"), scope_->text());
     settings.setValue(QStringLiteral("tcp"), tcpPorts_->text());
+    settings.setValue(QStringLiteral("top"), topPorts_->text());
     settings.setValue(QStringLiteral("udp"), udpPorts_->text());
+    settings.setValue(QStringLiteral("detector"), detector_->currentIndex());
+    settings.setValue(QStringLiteral("assess_vulns"), assessVulns_->isChecked());
+    settings.setValue(QStringLiteral("inspect"), inspect_->isChecked());
     settings.setValue(QStringLiteral("operator"), operator_->text());
     settings.setValue(QStringLiteral("no_rdns"), noRdns_->isChecked());
     settings.endGroup();

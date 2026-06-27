@@ -441,15 +441,26 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         let asset_id = store.record(&sig, scan_id, &state)?;
         up += 1;
 
-        // Match detected services to CVEs and enrich (F-015); deduped per product.
-        // Report each assessment so a "no vulns" outcome isn't silent — it's either
-        // "no versioned product detected" or an NVD lookup that found/returned none.
+        // Match detected products to CVEs and enrich (F-015). Products come from
+        // two sources, deduped: the service detector, and — so the clean-room
+        // native detector + `--inspect` yields CVEs without nmap (IMP-015) — the
+        // web-tech fingerprints attached to each port. Each assessment is reported,
+        // so a "no vulns" outcome isn't silent.
         if args.assess_vulns {
+            let mut targets: Vec<(String, Option<String>, u16)> = Vec::new();
             for (port, service) in &services {
-                let Some(product) = &service.product else { continue };
-                let key = (product.clone(), service.version.clone());
-                let vulns = vuln_cache.entry(key).or_insert_with(|| {
-                    match pontus_core::intel::assess(product, service.version.as_deref(), &kev) {
+                if let Some(product) = &service.product {
+                    targets.push((product.clone(), service.version.clone(), *port));
+                }
+            }
+            for po in &state.open_ports {
+                for t in &po.tech {
+                    targets.push((t.name.clone(), t.version.clone(), po.port));
+                }
+            }
+            for (product, version, port) in targets {
+                let vulns = vuln_cache.entry((product.clone(), version.clone())).or_insert_with(|| {
+                    match pontus_core::intel::assess(&product, version.as_deref(), &kev) {
                         Ok(v) => v,
                         Err(e) => {
                             eprintln!("note: vuln assessment for {product} failed: {e}");
@@ -457,10 +468,12 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 });
-                let ver = service.version.as_deref().unwrap_or("(no version)");
+                let ver = version.as_deref().unwrap_or("(no version)");
                 println!("       vulns {port}: {product} {ver} → {} CVE(s)", vulns.len());
+                // record_vuln uses INSERT OR IGNORE on (scan, asset, port, cve), so a
+                // CVE found via both the detector and web-tech is stored once.
                 for v in vulns.iter() {
-                    store.record_vuln(scan_id, asset_id, *port, v)?;
+                    store.record_vuln(scan_id, asset_id, port, v)?;
                 }
             }
         }
