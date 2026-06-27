@@ -119,6 +119,21 @@ pub unsafe extern "C" fn pontus_topology_json(handle: *mut PontusHandle, scan_id
     with_handle(handle, |h| serde_json::to_string(&h.store.edges_for_scan(scan_id).ok()?).ok())
 }
 
+/// JSON array of one scan's host observations (identity, IP, state with open
+/// ports + TLS/web/OS), for a scan-scoped inventory view like the heatmap. Using
+/// a single scan keeps the view consistent, rather than mixing each host's latest
+/// observation across scans with different port coverage.
+///
+/// # Safety
+/// `handle` must be a valid handle from [`pontus_open`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pontus_observations_json(
+    handle: *mut PontusHandle,
+    scan_id: i64,
+) -> *mut c_char {
+    with_handle(handle, |h| serde_json::to_string(&h.store.observations_for_scan(scan_id).ok()?).ok())
+}
+
 /// JSON array of hosts ranked by exploitation-weighted risk for a scan (F-015):
 /// `[{"asset_id":…,"identity_kind":…,"identity_value":…,"ip":…,"risk":…,
 /// "vulns":[{"cve_id":…,"cvss":…,"epss":…,"kev":…,"band":…,"score":…}, …]}, …]`,
@@ -263,6 +278,10 @@ mod tests {
         let topology = read_and_free(unsafe { pontus_topology_json(handle, 1) });
         assert!(topology.contains("192.168.1.50") && topology.contains("192.168.1.5"),
                 "topology edge in JSON: {topology}");
+
+        let obs = read_and_free(unsafe { pontus_observations_json(handle, 1) });
+        assert!(obs.contains("aa:bb:cc:dd:ee:ff") && obs.contains("open_ports"),
+                "scan 1 observations in JSON: {obs}");
 
         let risk = read_and_free(unsafe { pontus_risk_json(handle, 1) });
         assert!(risk.contains("CVE-2023-48795") && risk.contains("\"kev\":true"),

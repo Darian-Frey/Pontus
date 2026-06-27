@@ -26,6 +26,17 @@ candidate.
 
 ## Suggested
 
+### IMP-014: Expose the richer scan options in the GUI New-scan dialog
+
+- **Status:** suggested
+- **Found:** 2026-06-27 — a GUI scan found far fewer services than a terminal scan, because the dialog only offers a subset of the CLI's options.
+- **Location:** [gui/src/scandialog.cpp](../gui/src/scandialog.cpp).
+- **Effort:** medium
+- **Description.** The New-scan dialog exposes targets/scope/TCP ports/UDP ports/db/operator/skip-rDNS, but not `--top-ports`, `--detector`, `--os-detector`, `--assess-vulns` or `--inspect`. So GUI scans use a narrow port set and skip vuln/TLS/web enrichment — making the GUI feel less capable and less consistent than the CLI (it was the *cause* behind the heatmap confusion in BUG-010).
+- **Proposal.** Add controls — a top-ports spinbox, a detector dropdown, and `--assess-vulns` / `--inspect` checkboxes — and thread them into the shelled-out command (D-008). Note in the dialog that some need privilege/network.
+- **Trade-offs.** More dialog surface; `--assess-vulns`/`--inspect` lengthen scans and hit the network, and the nmap OS backend needs sudo — so default them off with clear labels.
+- **Notes.** The engine already supports all of these via the CLI; this is purely GUI plumbing. Pairs with BUG-010 (the heatmap is now scan-scoped, so once GUI scans cover more ports the snapshot is both consistent *and* complete).
+
 ### IMP-002: Support an NVD API key (and backoff) on the CVE-matching path
 
 - **Status:** suggested

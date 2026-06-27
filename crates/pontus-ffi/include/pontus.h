@@ -51,6 +51,9 @@ char *pontus_topology_json(PontusHandle *handle, long long scan_id);
  * first), each with its vulnerabilities worst first. Caller frees. */
 char *pontus_risk_json(PontusHandle *handle, long long scan_id);
 
+/* JSON array of one scan's host observations (identity, IP, state). Caller frees. */
+char *pontus_observations_json(PontusHandle *handle, long long scan_id);
+
 /* Designate a scan as the baseline to diff against. Returns true on success. */
 bool pontus_set_baseline(PontusHandle *handle, long long scan_id);
 

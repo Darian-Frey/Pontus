@@ -83,6 +83,16 @@ _None._
 - **Reproduction:** Run `--assess-vulns` while NVD is unreachable, or against a host whose detector yields no product; the result is silently empty.
 - **Notes:** Fixed by reporting each assessment (`vulns <port>: <product> <version> → N CVE(s)`) and printing a note when `assess` errors instead of discarding it. Surfacing, not behaviour, changed.
 
+### BUG-010: Heatmap mixed each host's latest observation across scans
+
+- **Status:** fixed (2026-06-27)
+- **Found:** 2026-06-27, GUI heatmap looked inconsistent — different hosts showed ports from different scans, so a host last scanned with a narrow port set appeared to have *lost* services it still exposes.
+- **Location:** [gui/src/heatmapdialog.cpp](../gui/src/heatmapdialog.cpp); new FFI `pontus_observations_json`.
+- **Severity:** Medium — a misleading inventory view that read as flaky scanning.
+- **Description:** The heatmap built its grid from each asset's *latest observation*. Those come from different scans with different port coverage (and different up/down states), so it conflated heterogeneous data — the router scanned narrowly in the latest scan showed fewer ports than an IoT host whose latest observation was an earlier broad scan.
+- **Reproduction:** Scan a /24 broadly, then scan it again with a narrow `--ports` set; open the heatmap — hosts display ports from whichever scan last observed them, not a single coherent snapshot.
+- **Notes:** Fixed by scoping the heatmap to a single scan via a selector (default latest), over a new `pontus_observations_json(scan_id)` FFI (serialising `observations_for_scan`). Now every host is compared on the same port coverage, matching the scan-scoped risk and diff views. The narrower *cause* — GUI scans use fewer options than the CLI — is tracked as [IMP-014](IMPROVEMENTS.md).
+
 ## Won't Fix
 
 _None._
