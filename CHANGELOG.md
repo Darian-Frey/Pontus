@@ -15,6 +15,11 @@ are complete and Phase 3 (Intelligence) is in progress; everything below is on
 
 ### Added
 
+#### Cross-cutting
+
+- Local network configuration view (`netinfo` module): this machine's interfaces (IP/MAC/netmask) and listening ports, over FFI `pontus_local_config_json`, the `pontus-cli netinfo` command, and a GUI view (View ▸ Local network config, Ctrl+L). "Self" info, distinct from the asset model — interfaces via `pnet`, listening ports from `/proc/net` (F-036).
+- External CVE references: double-clicking a CVE in the risk view opens its NVD detail page in the default browser (F-037).
+
 #### Phase 1 — native engine and asset store
 
 - Cargo workspace with the headless `pontus-core` and the `pontus-cli` driver (F-005, D-001).

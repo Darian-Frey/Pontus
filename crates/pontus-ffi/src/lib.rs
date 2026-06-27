@@ -174,6 +174,18 @@ pub unsafe extern "C" fn pontus_baseline(handle: *mut PontusHandle) -> i64 {
     handle.store.baseline().ok().flatten().unwrap_or(-1)
 }
 
+/// JSON of the local machine's own network configuration (F-036): interfaces
+/// (IP/MAC/netmask) and listening ports. Needs no handle — it queries the host
+/// Pontus runs on, not the store.
+///
+/// # Safety
+/// Always safe to call; the returned string must be freed with
+/// [`pontus_string_free`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pontus_local_config_json() -> *mut c_char {
+    into_c_string(serde_json::to_string(&pontus_core::local_config()).ok())
+}
+
 /// Free a string returned by this library.
 ///
 /// # Safety
@@ -310,5 +322,13 @@ mod tests {
     fn version_is_reported() {
         let v = read_and_free(pontus_version());
         assert!(!v.is_empty());
+    }
+
+    #[test]
+    fn local_config_needs_no_handle() {
+        // Queries this machine; every host has a loopback interface.
+        let cfg = read_and_free(unsafe { pontus_local_config_json() });
+        assert!(cfg.contains("\"interfaces\"") && cfg.contains("\"listening\""), "shape: {cfg}");
+        assert!(cfg.contains("\"loopback\":true"), "loopback present: {cfg}");
     }
 }

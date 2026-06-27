@@ -216,6 +216,14 @@ Per-asset history of exposure and risk (open services, CVE/risk score from F-015
 **Priority:** Could · **Status:** Not started
 A keyboard-driven command palette for navigation and actions (run a scan, apply a filter, jump to an asset) for power users. **Acceptance:** the common actions are reachable from the palette without the mouse.
 
+### F-036 Local network configuration
+**Priority:** Could · **Status:** Done (core + CLI + GUI)
+Show the host Pontus runs on — its interfaces (IP, MAC, netmask) and listening ports — as "self" info distinct from the asset model. `netinfo` module (interfaces via `pnet`, listening ports from `/proc/net`), FFI `pontus_local_config_json`, `pontus-cli netinfo`, and a GUI view (View ▸ Local network config, Ctrl+L). **Acceptance:** reports this machine's addresses and exposed ports.
+
+### F-037 External CVE references
+**Priority:** Could · **Status:** Done (GUI)
+Each CVE in the risk view links to its authoritative detail page: double-clicking a CVE opens `https://nvd.nist.gov/vuln/detail/<id>` in the default browser (`QDesktopServices`). **Acceptance:** double-clicking a CVE opens its NVD page.
+
 ## Candidate features (uncommitted)
 
 - Passive recon ingestion (certificate-transparency logs, Shodan/Censys via user API keys)

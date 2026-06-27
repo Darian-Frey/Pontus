@@ -3,6 +3,7 @@
 #pragma once
 
 #include <QJsonArray>
+#include <QJsonObject>
 #include <QString>
 
 #include "pontus.h"
@@ -28,6 +29,8 @@ public:
     QJsonArray topology(long long scanId);
     QJsonArray risk(long long scanId);
     QJsonArray observations(long long scanId);
+    // The local machine's network configuration; needs no open store.
+    QJsonObject localConfig();
 
     bool setBaseline(long long scanId);
     long long baseline(); // -1 if none set

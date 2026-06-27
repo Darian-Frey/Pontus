@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "diffdialog.h"
 #include "heatmapdialog.h"
+#include "netconfigdialog.h"
 #include "riskdialog.h"
 #include "scandialog.h"
 #include "topologydialog.h"
@@ -147,6 +148,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     QAction* riskAct = viewMenu->addAction(QStringLiteral("&Risk / vulnerabilities…"));
     riskAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+R")));
     connect(riskAct, &QAction::triggered, this, &MainWindow::onRisk);
+    QAction* netCfgAct = viewMenu->addAction(QStringLiteral("&Local network config…"));
+    netCfgAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+L")));
+    connect(netCfgAct, &QAction::triggered, this, &MainWindow::onNetConfig);
 
     // Left: filter box over the asset table (the F-029 workhorse, first cut).
     filter_ = new QLineEdit;
@@ -280,6 +284,13 @@ void MainWindow::onRisk() {
         return;
     }
     RiskDialog dialog(&client_, this);
+    dialog.exec();
+}
+
+void MainWindow::onNetConfig() {
+    // Local config is "self" info — no store needed, so this works without an
+    // open database.
+    NetConfigDialog dialog(&client_, this);
     dialog.exec();
 }
 
