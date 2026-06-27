@@ -48,17 +48,6 @@ candidate.
 - **Trade-offs.** Adds a confidence dimension to the vuln data model and the FFI/GUI surface; de-weighting risks hiding a genuinely exploited product if tuned too aggressively, so the first cut should mark, not suppress.
 - **Notes.** Addresses [BUG-002](BUGS.md). Depends on no other work.
 
-### IMP-004: Surface the OS guess in the GUI inventory
-
-- **Status:** suggested
-- **Found:** 2026-06-26, implementing F-013.
-- **Location:** [gui/src/mainwindow.cpp](../gui/src/mainwindow.cpp) (asset table + detail pane).
-- **Effort:** small
-- **Description.** `scan` now records an `os_guess` per observation, and it already flows through `pontus_asset_history_json`, but the GUI does not display it. The inventory could show an OS column and the detail pane an "OS: Linux/Unix (Ubuntu)" line.
-- **Proposal.** Read `os_guess` from the observation state in the asset history JSON; add an OS column to the asset table (most-recent observation) and a line in the detail pane.
-- **Trade-offs.** Another column competes for horizontal space in an already-wide table; mitigated by making it sortable/hideable, or showing OS only in the detail pane initially.
-- **Notes.** Pure GUI read-side work over data the store already holds (F-013, D-011). No core/FFI change needed.
-
 ### IMP-005: Use the TCP window (and consider an active probe) to refine OS family
 
 - **Status:** suggested
@@ -115,6 +104,17 @@ candidate.
 - **Notes.** Pairs with [IMP-008](#imp-008-integrate-tls-inspection-into-the-scan--observation-model) and [IMP-004](#imp-004-surface-the-os-guess-in-the-gui-inventory) for a single "deep-inspection in the scan + GUI" push.
 
 ## Applied
+
+### IMP-004: Surface the OS guess in the GUI inventory
+
+- **Status:** applied (2026-06-27)
+- **Found:** 2026-06-26, implementing F-013.
+- **Location:** [crates/pontus-core/src/store.rs](../crates/pontus-core/src/store.rs) (`AssetSummary`/`list_assets`), [gui/src/mainwindow.cpp](../gui/src/mainwindow.cpp).
+- **Effort:** small
+- **Description.** `scan` records an `os_guess` per observation, but the GUI did not display it.
+- **Proposal.** Add the most-recent observation's OS guess to `AssetSummary` (via a `json_extract` subquery over the observation `state`), so it flows through `assets_json`; show it as an "OS" column in the inventory and an "OS" column in the per-asset observation history.
+- **Trade-offs.** One more column in an already-wide table; kept compact (dash when unknown) and the inventory remains sortable.
+- **Notes.** Read-side over data the store already holds (F-013, D-011). The `json_extract` uses the bundled SQLite's JSON1 extension. Pairs with [IMP-008](#imp-008-integrate-tls-inspection-into-the-scan--observation-model)/[IMP-010](#imp-010-fold-web-tech-fingerprinting-into-scans-with-an-updatable-signature-set) for the rest of the deep-inspection surfacing.
 
 ### IMP-006: Capture the ICMP echo-reply TTL so portless hosts get an OS guess
 

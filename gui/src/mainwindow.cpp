@@ -30,7 +30,7 @@
 #include <QVBoxLayout>
 
 namespace {
-const QStringList kColumns = {"ID", "Anchor", "Identity", "Hostname", "Last IP", "Obs", "Last seen"};
+const QStringList kColumns = {"ID", "Anchor", "Identity", "Hostname", "Last IP", "OS", "Obs", "Last seen"};
 
 // Render an observation's open ports as "proto/port" tokens.
 QString portsSummary(const QJsonObject& state) {
@@ -129,8 +129,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     detailHeader_ = new QLabel(QStringLiteral("Select an asset"));
     detailHeader_->setStyleSheet(QStringLiteral("font-weight: bold;"));
     history_ = new QTableWidget;
-    history_->setColumnCount(5);
-    history_->setHorizontalHeaderLabels({"Observed at", "Scan", "IP", "Up", "Open ports"});
+    history_->setColumnCount(6);
+    history_->setHorizontalHeaderLabels({"Observed at", "Scan", "IP", "Up", "OS", "Open ports"});
     history_->verticalHeader()->setVisible(false);
     history_->horizontalHeader()->setStretchLastSection(true);
     history_->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -262,6 +262,7 @@ void MainWindow::reload() {
         row << textItem(a.value("identity_value").toString());
         row << textItem(orDash(a.value("hostname")));
         row << textItem(orDash(a.value("last_ip")));
+        row << textItem(orDash(a.value("os")));
         row << numericItem(a.value("observations").toInt());
         row << textItem(a.value("last_seen").toString());
         model_->appendRow(row);
@@ -294,7 +295,9 @@ void MainWindow::showHistory(long long assetId, const QString& identity) {
         history_->setItem(i, 1, new QTableWidgetItem(QString::number(o.value("scan_id").toInt())));
         history_->setItem(i, 2, new QTableWidgetItem(o.value("ip").toString()));
         history_->setItem(i, 3, new QTableWidgetItem(state.value("up").toBool() ? "yes" : "no"));
-        history_->setItem(i, 4, new QTableWidgetItem(portsSummary(state)));
+        const QJsonValue os = state.value("os_guess");
+        history_->setItem(i, 4, new QTableWidgetItem(os.isString() ? os.toString() : QStringLiteral("-")));
+        history_->setItem(i, 5, new QTableWidgetItem(portsSummary(state)));
     }
     history_->resizeColumnsToContents();
     history_->horizontalHeader()->setStretchLastSection(true);
