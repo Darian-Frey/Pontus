@@ -72,6 +72,7 @@ are complete and Phase 3 (Intelligence) is in progress; everything below is on
 - Vulnerability assessment is no longer silent: each assessment prints `vulns <port>: <product> <version> → N CVE(s)`, and an NVD lookup error is reported instead of being swallowed to an empty result (BUG-009).
 - The risk view's per-host CVE list is deduped by CVE in `risk_ranked`, so a product on multiple ports (e.g. 80 and 443) no longer lists each CVE twice or inflates the count (IMP-012).
 - The service/port heatmap is now scoped to a single scan (a selector, defaulting to the latest) over a new `pontus_observations_json` FFI, instead of mixing each host's latest observation across scans with different port coverage — which made the grid look inconsistent (BUG-010).
+- The heatmap distinguishes confirmed-open ports (green) from UDP `open|filtered` / no-reply (amber), with a legend and tooltips, so unconfirmed UDP no longer reads as solid exposure (IMP-016).
 - Wide scans no longer abort on `ENOBUFS`: the raw-socket send path treats a full transmit queue (os error 105) as transient backpressure — pacing and retrying rather than failing — so a `/24 × ~100 ports` sweep completes instead of erroring out (BUG-011).
 - Service banners no longer carry trailing dots from a stripped CRLF (`scan::stateful::sanitise`).
 - Muted note text is now theme-adaptive (`applyMutedText`) instead of `palette(mid)`, which was unreadable on dark themes.

@@ -94,6 +94,17 @@ candidate.
 
 ## Applied
 
+### IMP-016: Distinguish UDP open|filtered from confirmed-open in the heatmap
+
+- **Status:** applied (2026-06-27)
+- **Found:** 2026-06-27 — comparing two scans' heatmaps, UDP bands flickered, because `open|filtered` (no reply) was painted the same green as a confirmed-open port.
+- **Location:** [gui/src/heatmapdialog.cpp](../gui/src/heatmapdialog.cpp).
+- **Effort:** small
+- **Description.** A UDP probe with no reply is recorded as `open|filtered` — *unconfirmed* (could be open or filtered), and inherently non-deterministic across scans. The heatmap showed it identically to a confirmed-open service, making UDP look inconsistent and overstating exposure.
+- **Proposal.** Track per cell whether the port is confirmed (TCP, or UDP with a real response) vs `open|filtered`, and render confirmed in green, `open|filtered` in amber, with a legend and matching tooltips.
+- **Trade-offs.** A second colour to read, but the distinction is the point — solid bands are real exposure, amber is "no answer."
+- **Notes.** Doesn't change the data, only its honesty in the view. The larger cross-scan differences the user noticed were genuine host churn (devices asleep), best seen in the Drift/diff view — not a bug.
+
 ### IMP-015: Feed web-tech fingerprints into vulnerability assessment
 
 - **Status:** applied (2026-06-27)
