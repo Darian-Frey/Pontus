@@ -141,8 +141,8 @@ Match detected versions to NVD/OSV; enrich with EPSS and CISA KEV; composite a p
 Cert chain, expiry, weak ciphers, SNI, certificate-transparency cross-reference. A clean-room, pure-Rust prober (`tls` module, no OpenSSL): enumerates protocols SSLv3–TLS 1.3, probes weak-cipher acceptance, and captures + inspects the certificate (expiry, self-signed, weak signature/key, SAN/hostname). `pontus-cli tls <host>` reports it. CT cross-reference and full TLS 1.3-only cert capture are follow-ups. **Acceptance:** flags an expired cert and a weak cipher suite on a test endpoint — met, live-verified against badssl.com.
 
 ### F-017 HTTP tech fingerprinting
-**Priority:** Could · **Status:** Not started
-Wappalyzer-style stack identification from headers/markup. **Acceptance:** identifies server, framework and common front-end libraries on a reference site.
+**Priority:** Could · **Status:** Done (core + CLI)
+Wappalyzer-style stack identification from headers/markup. The `webtech` module identifies servers, languages, frameworks, CMSes, JS libraries, CDNs and analytics from response headers (`Server`, `X-Powered-By`, `Set-Cookie`, CDN markers), the `<meta generator>` tag and tell-tale paths/scripts — with versions where exposed. Clean-room signature set (C-001; not derived from Wappalyzer's dataset), reusing the existing `ureq` client. `pontus-cli http <host>` reports it, scope-enforced. **Acceptance:** identifies server, framework and common front-end libraries on a reference site — met, live-verified (wordpress.org → nginx + WordPress 7.1; python.org → nginx + jQuery + Fastly).
 
 ### F-018 Monitoring daemon
 **Priority:** Should · **Status:** Not started

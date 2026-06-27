@@ -68,6 +68,24 @@ enum Command {
     },
     /// Inspect a host's TLS/SSL: protocols, cipher suites and certificate (F-016).
     Tls(TlsArgs),
+    /// Identify the web technology stack of an HTTP(S) endpoint (F-017).
+    Http(HttpArgs),
+}
+
+#[derive(Parser)]
+struct HttpArgs {
+    /// Target host (IP or hostname) to fingerprint; the hostname is used for SNI.
+    target: String,
+    /// Authorised scope (repeatable). Mandatory — nothing is contacted outside it
+    /// (F-007). Defaults to the target itself when omitted.
+    #[arg(long = "scope", value_name = "CIDR|IP")]
+    scope: Vec<String>,
+    /// Port to fetch (443 → https, otherwise http).
+    #[arg(long, default_value_t = 443)]
+    port: u16,
+    /// Request timeout, milliseconds.
+    #[arg(long, default_value_t = 6000)]
+    timeout_ms: u64,
 }
 
 #[derive(Parser)]
@@ -197,6 +215,7 @@ async fn main() -> ExitCode {
         Command::Risk { db, scan } => run_risk(&db, scan),
         Command::Diff { db, from, to, all } => run_diff(&db, from, to, all),
         Command::Tls(args) => run_tls(args),
+        Command::Http(args) => run_http(args),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -679,6 +698,41 @@ fn fmt_ts(ts: i64) -> String {
     chrono::DateTime::from_timestamp(ts, 0)
         .map(|dt| dt.format("%Y-%m-%d %H:%M:%SZ").to_string())
         .unwrap_or_else(|| ts.to_string())
+}
+
+fn run_http(args: HttpArgs) -> Result<(), Box<dyn std::error::Error>> {
+    use std::net::ToSocketAddrs;
+
+    let addr = (args.target.as_str(), args.port)
+        .to_socket_addrs()?
+        .next()
+        .ok_or("could not resolve target")?;
+
+    // Scope enforcement (F-007): refuse before any request. Defaults to the target.
+    let scope_specs: Vec<String> =
+        if args.scope.is_empty() { vec![addr.ip().to_string()] } else { args.scope.clone() };
+    let scope = Scope::parse(&scope_specs)?;
+    scope.ensure(addr.ip())?;
+
+    let scheme = if args.port == 443 { "https" } else { "http" };
+    let url = format!("{scheme}://{}:{}/", args.target, args.port);
+    println!("http: {url}  ({})", addr.ip());
+    let fp = pontus_core::webtech::fingerprint(&url, Duration::from_millis(args.timeout_ms))?;
+    print_web_fingerprint(&fp);
+    Ok(())
+}
+
+fn print_web_fingerprint(fp: &pontus_core::WebFingerprint) {
+    println!("status: {}", fp.status);
+    if fp.techs.is_empty() {
+        println!("\nno technologies identified");
+        return;
+    }
+    println!("\ntechnologies:");
+    for t in &fp.techs {
+        let ver = t.version.as_deref().map(|v| format!(" {v}")).unwrap_or_default();
+        println!("  {:<11} {}{}  ({})", t.category.as_str(), t.name, ver, t.evidence);
+    }
 }
 
 fn run_diff(db: &str, from: Option<i64>, to: Option<i64>, all: bool) -> Result<(), Box<dyn std::error::Error>> {

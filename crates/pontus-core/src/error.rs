@@ -22,6 +22,10 @@ pub enum Error {
     #[error("intelligence feed error: {0}")]
     Feed(String),
 
+    /// An HTTP request failed during web tech fingerprinting (F-017).
+    #[error("HTTP error: {0}")]
+    Http(String),
+
     /// Identity resolution was handed no usable signal at all — not even an IP.
     /// See the resolution hierarchy in [`crate::identity`] (C-003, F-004).
     #[error("identity resolution needs at least one signal (MAC, host key, hostname or IP)")]
