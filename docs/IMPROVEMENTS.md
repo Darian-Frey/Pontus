@@ -94,6 +94,17 @@ candidate.
 
 ## Applied
 
+### IMP-012: Dedupe the risk view's per-host CVE list by CVE
+
+- **Status:** applied (2026-06-27)
+- **Found:** 2026-06-27, reviewing a populated risk view — a web server on 80 and 443 listed each CVE twice, inflating the count (82 = 41 × 2 ports).
+- **Location:** [crates/pontus-core/src/store.rs](../crates/pontus-core/src/store.rs) — `risk_ranked`.
+- **Effort:** trivial
+- **Description.** Vulnerabilities are recorded per port, so a product on multiple ports produced duplicate CVE rows in the (CVE-centric) triage view.
+- **Proposal.** Collapse each host's vulns to one entry per CVE in `risk_ranked` — the single scoring path, so the CLI `risk`, FFI and GUI all dedupe consistently. The host risk (the max) is unchanged.
+- **Trade-offs.** Drops the which-ports detail from the view; acceptable since you fix a CVE once, not per port, and the per-port rows remain in the `vulns` table.
+- **Notes.** Test `risk_ranked_dedupes_a_cve_recorded_on_multiple_ports`. Surfaced reviewing the IMP-008/010 work.
+
 ### IMP-008: Integrate TLS inspection into the scan / observation model
 
 - **Status:** applied (2026-06-27)

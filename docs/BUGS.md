@@ -63,6 +63,26 @@ _None._
 - **Reproduction:** Run a service on a known-Linux host and scan it; before the fix the recorded stack signature was `opts=M` despite a full modern TCP stack.
 - **Notes:** Fixed by having `build_syn_v4`/`build_syn_v6` carry a representative option set (MSS, SACK-permitted, Timestamp, NOP, Window-scale) — the same reason nmap/p0f probes include options. Responders now echo their own option ordering. Regression test `syn_probe_carries_the_fingerprint_options`.
 
+### BUG-008: KEV cache not found under sudo (root's cache dir, not the user's)
+
+- **Status:** fixed (2026-06-27)
+- **Found:** 2026-06-27, running `sudo pontus-cli scan --assess-vulns` after `pontus-cli intel update` — "no KEV cache at /root/.cache/pontus/kev.json".
+- **Location:** [crates/pontus-cli/src/main.rs](../crates/pontus-cli/src/main.rs) — `default_cache_dir`.
+- **Severity:** Medium — KEV enrichment silently does nothing under a privileged scan, so KEV-listed vulnerabilities aren't flagged as such (skewing the risk ranking).
+- **Description:** Raw-socket scans run under sudo (HOME=/root), but `intel update` is run as the user, caching to `~/.cache/pontus`. The privileged scan resolved the cache from root's HOME and missed it.
+- **Reproduction:** `pontus-cli intel update` as the user, then `sudo pontus-cli scan … --assess-vulns`; the KEV cache is reported missing.
+- **Notes:** Fixed by preferring the invoking user's cache (`/home/$SUDO_USER/.cache/pontus`) when `SUDO_USER` is set, before falling back to `HOME`. Does not by itself explain an empty risk view — KEV absence only drops the `kev` flag, not the NVD-matched CVEs (see BUG-009).
+
+### BUG-009: Vulnerability assessment failures were silent
+
+- **Status:** fixed (2026-06-27)
+- **Found:** 2026-06-27, a `--assess-vulns` scan recorded no vulnerabilities for a host whose service was detected, with no explanation.
+- **Location:** [crates/pontus-cli/src/main.rs](../crates/pontus-cli/src/main.rs) — the `--assess-vulns` loop.
+- **Severity:** Medium — a failed NVD lookup or a product detected without a version both produced "no vulnerabilities" indistinguishably, masking the real cause.
+- **Description:** `intel::assess(...).unwrap_or_default()` swallowed any error (NVD network/rate-limit) to an empty result, and ports whose service had no product were skipped without a word, so a "no vulns" outcome gave no diagnostic.
+- **Reproduction:** Run `--assess-vulns` while NVD is unreachable, or against a host whose detector yields no product; the result is silently empty.
+- **Notes:** Fixed by reporting each assessment (`vulns <port>: <product> <version> → N CVE(s)`) and printing a note when `assess` errors instead of discarding it. Surfacing, not behaviour, changed.
+
 ## Won't Fix
 
 _None._
