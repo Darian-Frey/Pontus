@@ -9,8 +9,21 @@ use crate::discovery::{DiscoveryError, priv_or_io};
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use std::mem::MaybeUninit;
 use std::net::SocketAddr;
+use std::time::Duration;
 use tokio::io::unix::{AsyncFd, AsyncFdReadyGuard};
-use tokio::time::{Instant, timeout};
+use tokio::time::{Instant, sleep, timeout};
+
+/// `ENOBUFS` (the kernel's transmit queue is momentarily full) is transient
+/// backpressure on a wide sweep, not a real failure — pace and retry rather than
+/// abort the scan. Unlike `WouldBlock` the socket still reports writable, so
+/// awaiting readiness doesn't help; a short sleep lets the queue drain.
+fn is_backpressure(e: &std::io::Error) -> bool {
+    e.raw_os_error() == Some(libc::ENOBUFS)
+}
+
+/// How many times to ride out sustained `ENOBUFS` for one probe before dropping it
+/// (≈ a few ms); the sweep continues rather than failing.
+const ENOBUFS_RETRIES: u32 = 64;
 
 /// Create a non-blocking raw socket, mapping a permission error to
 /// [`DiscoveryError::Privilege`].
@@ -38,14 +51,23 @@ impl<'a> BatchSender<'a> {
 
     /// Send one datagram, reusing the held readiness when possible.
     pub(crate) async fn send(&mut self, buf: &[u8], addr: &SockAddr) -> Result<(), DiscoveryError> {
+        let mut enobufs = 0u32;
         loop {
             if self.guard.is_none() {
                 self.guard = Some(self.afd.writable().await?);
             }
             let guard = self.guard.as_mut().expect("guard set above");
             match guard.try_io(|inner| inner.get_ref().send_to(buf, addr)) {
-                Ok(res) => return res.map(|_| ()).map_err(DiscoveryError::Io),
-                // Buffer full: drop readiness and re-await on the next iteration.
+                Ok(Ok(_)) => return Ok(()),
+                Ok(Err(e)) if is_backpressure(&e) => {
+                    enobufs += 1;
+                    if enobufs > ENOBUFS_RETRIES {
+                        return Ok(()); // drop this probe; the sweep keeps going
+                    }
+                    sleep(Duration::from_micros(200)).await; // let the tx queue drain
+                }
+                Ok(Err(e)) => return Err(DiscoveryError::Io(e)),
+                // Send buffer full: drop readiness and re-await on the next iteration.
                 Err(_would_block) => self.guard = None,
             }
         }
@@ -60,10 +82,19 @@ pub(crate) async fn send_to(
     dst: SocketAddr,
 ) -> Result<(), DiscoveryError> {
     let addr = SockAddr::from(dst);
+    let mut enobufs = 0u32;
     loop {
         let mut guard = afd.writable().await?;
         match guard.try_io(|inner| inner.get_ref().send_to(buf, &addr)) {
-            Ok(res) => return res.map(|_| ()).map_err(DiscoveryError::Io),
+            Ok(Ok(_)) => return Ok(()),
+            Ok(Err(e)) if is_backpressure(&e) => {
+                enobufs += 1;
+                if enobufs > ENOBUFS_RETRIES {
+                    return Ok(()); // drop this probe; the sweep keeps going
+                }
+                sleep(Duration::from_micros(200)).await;
+            }
+            Ok(Err(e)) => return Err(DiscoveryError::Io(e)),
             Err(_would_block) => continue,
         }
     }
@@ -126,5 +157,12 @@ mod tests {
         for _ in 0..20_000u32 {
             sender.send(b"pontus", &addr).await.unwrap();
         }
+    }
+
+    #[test]
+    fn enobufs_is_classified_as_backpressure() {
+        assert!(is_backpressure(&std::io::Error::from_raw_os_error(libc::ENOBUFS)));
+        // A genuine error (e.g. permission denied) is not backpressure.
+        assert!(!is_backpressure(&std::io::Error::from_raw_os_error(libc::EACCES)));
     }
 }
