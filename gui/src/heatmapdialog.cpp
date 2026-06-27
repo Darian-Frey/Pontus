@@ -26,7 +26,8 @@ HeatmapDialog::HeatmapDialog(PontusClient* client, QWidget* parent)
 
     auto* note = new QLabel(QStringLiteral(
         "Open services for one scan — every host compared on the same port coverage. "
-        "Columns are ordered most-shared first; vertical bands are shared exposure."));
+        "Columns are ordered most-shared first; vertical bands are shared exposure. "
+        "Green = confirmed open; amber = UDP open|filtered (no reply — unconfirmed)."));
     note->setWordWrap(true);
     applyMutedText(note);
 
@@ -73,8 +74,11 @@ void HeatmapDialog::build() {
     // Gather open ports per host from a single scan, so every host is measured
     // against the same port coverage (not each host's latest observation, which
     // mixes scans with different port sets).
-    QList<QPair<QString, QSet<QString>>> rows; // (host label, open "proto/port" set)
-    QMap<QString, int> counts;                 // port -> number of hosts exposing it
+    // (host label, port "proto/port" -> confirmed?). A UDP port is "confirmed"
+    // only if the host actually replied; "open|filtered" means no reply, so it is
+    // shown distinctly rather than as a solid open service (IMP-016).
+    QList<QPair<QString, QMap<QString, bool>>> rows;
+    QMap<QString, int> counts; // port -> number of hosts exposing it
 
     if (scan_->count() == 0) {
         table_->clear();
@@ -92,16 +96,20 @@ void HeatmapDialog::build() {
         const QString ip = o.value("ip").toString();
         const QString label = ip.isEmpty() ? host : QStringLiteral("%1 (%2)").arg(host, ip);
 
-        QSet<QString> ports;
+        QMap<QString, bool> ports;
         const QJsonObject state = o.value("state").toObject();
         for (const QJsonValue& pv : state.value("open_ports").toArray()) {
             const QJsonObject p = pv.toObject();
-            ports << QStringLiteral("%1/%2").arg(p.value("proto").toString())
-                         .arg(p.value("port").toInt());
+            const QString proto = p.value("proto").toString();
+            const QString key = QStringLiteral("%1/%2").arg(proto).arg(p.value("port").toInt());
+            // UDP with no reply is recorded as service "open|filtered" — unconfirmed.
+            const bool confirmed = !(proto == QLatin1String("udp")
+                                     && p.value("service").toString() == QLatin1String("open|filtered"));
+            ports.insert(key, confirmed);
         }
         rows.append({label, ports});
-        for (const QString& port : ports) {
-            ++counts[port];
+        for (auto it = ports.constBegin(); it != ports.constEnd(); ++it) {
+            ++counts[it.key()];
         }
     }
 
@@ -124,14 +132,21 @@ void HeatmapDialog::build() {
     }
     table_->setHorizontalHeaderLabels(headers);
 
-    const QColor openColour(0x27, 0xae, 0x60);
+    const QColor openColour(0x27, 0xae, 0x60);     // confirmed open (green)
+    const QColor maybeColour(0xb7, 0x83, 0x0a);    // open|filtered — no reply (amber)
     for (int r = 0; r < rows.size(); ++r) {
         table_->setItem(r, 0, new QTableWidgetItem(rows[r].first));
         for (int c = 0; c < columns.size(); ++c) {
             auto* cell = new QTableWidgetItem;
-            if (rows[r].second.contains(columns[c])) {
-                cell->setBackground(openColour);
-                cell->setToolTip(QStringLiteral("%1 open on %2").arg(columns[c], rows[r].first));
+            const auto it = rows[r].second.constFind(columns[c]);
+            if (it != rows[r].second.constEnd()) {
+                const bool confirmed = it.value();
+                cell->setBackground(confirmed ? openColour : maybeColour);
+                cell->setToolTip(QStringLiteral("%1 %2 on %3")
+                                     .arg(columns[c],
+                                          confirmed ? QStringLiteral("open")
+                                                    : QStringLiteral("open|filtered (no reply)"),
+                                          rows[r].first));
             }
             table_->setItem(r, c + 1, cell);
         }
