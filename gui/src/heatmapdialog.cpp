@@ -3,7 +3,9 @@
 #include "pontusclient.h"
 #include "uiutil.h"
 
+#include <QComboBox>
 #include <QDialogButtonBox>
+#include <QHBoxLayout>
 #include <QHeaderView>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -23,10 +25,16 @@ HeatmapDialog::HeatmapDialog(PontusClient* client, QWidget* parent)
     resize(900, 600);
 
     auto* note = new QLabel(QStringLiteral(
-        "Open services across the inventory (each host's latest observation). "
-        "Columns are ordered most-shared first — vertical bands are shared exposure."));
+        "Open services for one scan — every host compared on the same port coverage. "
+        "Columns are ordered most-shared first; vertical bands are shared exposure."));
     note->setWordWrap(true);
     applyMutedText(note);
+
+    scan_ = new QComboBox;
+    connect(scan_, &QComboBox::currentIndexChanged, this, &HeatmapDialog::build);
+    auto* selectors = new QHBoxLayout;
+    selectors->addWidget(new QLabel(QStringLiteral("Scan")));
+    selectors->addWidget(scan_, 1);
 
     table_ = new QTableWidget;
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -40,35 +48,56 @@ HeatmapDialog::HeatmapDialog(PontusClient* client, QWidget* parent)
 
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(note);
+    layout->addLayout(selectors);
     layout->addWidget(table_, 1);
     layout->addWidget(summary_);
     layout->addWidget(buttons);
 
+    populateScans();
     build();
 }
 
+void HeatmapDialog::populateScans() {
+    scan_->blockSignals(true);
+    for (const QJsonValue& v : client_->scans(100)) { // newest first
+        const QJsonObject s = v.toObject();
+        const qlonglong id = s.value("id").toInt();
+        scan_->addItem(
+            QStringLiteral("scan %1 — %2").arg(id).arg(s.value("started_at").toString()), id);
+    }
+    scan_->setCurrentIndex(0); // latest
+    scan_->blockSignals(false);
+}
+
 void HeatmapDialog::build() {
-    // Gather each asset's open ports from its latest observation.
+    // Gather open ports per host from a single scan, so every host is measured
+    // against the same port coverage (not each host's latest observation, which
+    // mixes scans with different port sets).
     QList<QPair<QString, QSet<QString>>> rows; // (host label, open "proto/port" set)
     QMap<QString, int> counts;                 // port -> number of hosts exposing it
 
-    for (const QJsonValue& v : client_->assets()) {
-        const QJsonObject a = v.toObject();
-        const long long id = a.value("id").toInt();
-        const QString host = a.value("hostname").isNull() ? a.value("identity_value").toString()
-                                                          : a.value("hostname").toString();
-        const QString ip = a.value("last_ip").isNull() ? QString() : a.value("last_ip").toString();
+    if (scan_->count() == 0) {
+        table_->clear();
+        table_->setRowCount(0);
+        table_->setColumnCount(1);
+        table_->setHorizontalHeaderLabels({QStringLiteral("Host")});
+        summary_->setText(QStringLiteral("No scans yet."));
+        return;
+    }
+    const qlonglong scanId = scan_->currentData().toLongLong();
+
+    for (const QJsonValue& v : client_->observations(scanId)) {
+        const QJsonObject o = v.toObject();
+        const QString host = o.value("identity_value").toString();
+        const QString ip = o.value("ip").toString();
         const QString label = ip.isEmpty() ? host : QStringLiteral("%1 (%2)").arg(host, ip);
 
         QSet<QString> ports;
-        const QJsonArray history = client_->assetHistory(id);
-        if (!history.isEmpty()) {
-            const QJsonObject state = history.at(0).toObject().value("state").toObject();
-            for (const QJsonValue& pv : state.value("open_ports").toArray()) {
-                const QJsonObject p = pv.toObject();
-                ports << QStringLiteral("%1/%2").arg(p.value("proto").toString())
-                             .arg(p.value("port").toInt());
-            }
+        const QJsonObject state = o.value("state").toObject();
+        for (const QJsonValue& pv : state.value("open_ports").toArray()) {
+            const QJsonObject p = pv.toObject();
+            ports << QStringLiteral("%1/%2").arg(p.value("proto").toString())
+                         .arg(p.value("port").toInt());
         }
         rows.append({label, ports});
         for (const QString& port : ports) {

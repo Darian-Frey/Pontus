@@ -27,6 +27,7 @@ public:
     QJsonArray diff(long long fromScan, long long toScan);
     QJsonArray topology(long long scanId);
     QJsonArray risk(long long scanId);
+    QJsonArray observations(long long scanId);
 
     bool setBaseline(long long scanId);
     long long baseline(); // -1 if none set

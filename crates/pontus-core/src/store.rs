@@ -153,7 +153,7 @@ pub struct AssetObservation {
 
 /// One host's observation within a scan, joined to its asset identity. The unit a
 /// diff compares (F-014).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct HostObservation {
     pub asset_id: i64,
     pub identity_kind: String,
