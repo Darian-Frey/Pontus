@@ -74,6 +74,16 @@ QJsonArray PontusClient::observations(long long scanId) {
     return handle_ ? parseAndFree(pontus_observations_json(handle_, scanId)) : QJsonArray{};
 }
 
+QJsonObject PontusClient::localConfig() {
+    char* json = pontus_local_config_json(); // no handle — it queries this machine
+    if (!json) {
+        return {};
+    }
+    const QJsonObject obj = QJsonDocument::fromJson(QByteArray(json)).object();
+    pontus_string_free(json);
+    return obj;
+}
+
 bool PontusClient::setBaseline(long long scanId) {
     return handle_ ? pontus_set_baseline(handle_, scanId) : false;
 }

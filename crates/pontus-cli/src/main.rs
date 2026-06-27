@@ -70,6 +70,8 @@ enum Command {
     Tls(TlsArgs),
     /// Identify the web technology stack of an HTTP(S) endpoint (F-017).
     Http(HttpArgs),
+    /// Show this machine's own network configuration: interfaces and listening ports (F-036).
+    Netinfo,
 }
 
 #[derive(Parser)]
@@ -229,6 +231,7 @@ async fn main() -> ExitCode {
         Command::Diff { db, from, to, all } => run_diff(&db, from, to, all),
         Command::Tls(args) => run_tls(args),
         Command::Http(args) => run_http(args),
+        Command::Netinfo => run_netinfo(),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -784,6 +787,35 @@ fn fmt_ts(ts: i64) -> String {
     chrono::DateTime::from_timestamp(ts, 0)
         .map(|dt| dt.format("%Y-%m-%d %H:%M:%SZ").to_string())
         .unwrap_or_else(|| ts.to_string())
+}
+
+fn run_netinfo() -> Result<(), Box<dyn std::error::Error>> {
+    let cfg = pontus_core::local_config();
+
+    println!("interfaces:");
+    for i in &cfg.interfaces {
+        let mut flags = Vec::new();
+        flags.push(if i.up { "up" } else { "down" });
+        if i.loopback {
+            flags.push("loopback");
+        }
+        println!("  {:<12} {:<18} [{}]", i.name, i.mac.as_deref().unwrap_or("-"), flags.join(", "));
+        for a in &i.addrs {
+            match &a.netmask {
+                Some(mask) => println!("      {} /{}  mask {}", a.ip, a.prefix, mask),
+                None => println!("      {} /{}", a.ip, a.prefix),
+            }
+        }
+    }
+
+    println!("\nlistening ports:");
+    if cfg.listening.is_empty() {
+        println!("  (none, or unavailable on this platform)");
+    }
+    for p in &cfg.listening {
+        println!("  {:<5} {}:{}", p.proto, p.address, p.port);
+    }
+    Ok(())
 }
 
 fn run_http(args: HttpArgs) -> Result<(), Box<dyn std::error::Error>> {

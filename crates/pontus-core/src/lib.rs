@@ -13,6 +13,7 @@ pub mod error;
 pub mod identity;
 pub mod intel;
 pub mod model;
+pub mod netinfo;
 pub mod os;
 mod raw;
 pub mod rdns;
@@ -33,6 +34,7 @@ pub use model::{
     IdentityKind, IdentitySignals, ObservationState, PortObservation, TechObservation,
     TlsObservation,
 };
+pub use netinfo::{Interface, IfAddr, ListenPort, LocalConfig, local_config};
 pub use os::{
     NativeOsDetector, NmapOsDetector, OsCorpus, OsDetector, OsGuess, OsSignals, fingerprint,
 };

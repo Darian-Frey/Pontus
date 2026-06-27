@@ -4,7 +4,9 @@
 #include "uiutil.h"
 
 #include <QComboBox>
+#include <QDesktopServices>
 #include <QDialogButtonBox>
+#include <QFont>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QJsonArray>
@@ -12,6 +14,7 @@
 #include <QLabel>
 #include <QSplitter>
 #include <QTableWidget>
+#include <QUrl>
 #include <QVBoxLayout>
 
 namespace {
@@ -70,6 +73,17 @@ RiskDialog::RiskDialog(PontusClient* client, QWidget* parent)
     vulns_->horizontalHeader()->setStretchLastSection(true);
     vulns_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     vulns_->setSelectionMode(QAbstractItemView::NoSelection);
+    // Double-click a CVE row to open its NVD detail page in the default browser.
+    connect(vulns_, &QTableWidget::itemDoubleClicked, this, [](QTableWidgetItem* item) {
+        if (!item) {
+            return;
+        }
+        const QString cve = item->tableWidget()->item(item->row(), 0)->text();
+        if (cve.startsWith(QLatin1String("CVE-"))) {
+            QDesktopServices::openUrl(
+                QUrl(QStringLiteral("https://nvd.nist.gov/vuln/detail/%1").arg(cve)));
+        }
+    });
 
     auto* hostsBox = new QWidget;
     auto* hostsLayout = new QVBoxLayout(hostsBox);
@@ -219,6 +233,10 @@ void RiskDialog::onHostSelected() {
         const QColor colour = bandColour(band);
 
         auto* cveItem = new QTableWidgetItem(vuln.value("cve_id").toString());
+        cveItem->setToolTip(QStringLiteral("Double-click to open this CVE on NVD"));
+        QFont linkFont = cveItem->font();
+        linkFont.setUnderline(true);
+        cveItem->setFont(linkFont);
         auto* bandItem = new QTableWidgetItem(band);
 
         const QJsonValue cvss = vuln.value("cvss");
