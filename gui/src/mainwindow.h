@@ -10,6 +10,7 @@ class QSortFilterProxyModel;
 class QStandardItemModel;
 class QTableView;
 class QTableWidget;
+class QTextEdit;
 
 // The Pontus home screen (F-008): the asset inventory as a filterable table with a
 // detail pane showing the selected asset's observation history. Reads through the
@@ -47,4 +48,5 @@ private:
     QLineEdit* filter_ = nullptr;
     QLabel* detailHeader_ = nullptr;
     QTableWidget* history_ = nullptr;
+    QTextEdit* inspection_ = nullptr;
 };

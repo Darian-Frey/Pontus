@@ -136,7 +136,7 @@ mod tests {
                 up: true,
                 open_ports: ports
                     .iter()
-                    .map(|&port| PortObservation { port, proto: "tcp".to_string(), service: None, version: None })
+                    .map(|&port| PortObservation { port, proto: "tcp".to_string(), ..Default::default() })
                     .collect(),
                 os_guess: None,
             },

@@ -70,17 +70,6 @@ candidate.
 - **Trade-offs.** More fields widen the data model and the corpus schema; MSS and window-scale values are influenced by path MTU and tuning, so they must be low-weight/advisory to avoid false precision. Diminishing returns versus the option layout, which already does most of the discrimination.
 - **Notes.** Extends D-011 and the option-layout work. The active-probe path (D-011 option A) remains the route to version-level precision if family-level proves insufficient.
 
-### IMP-008: Integrate TLS inspection into the scan / observation model
-
-- **Status:** suggested
-- **Found:** 2026-06-27, implementing F-016 as a standalone `tls` command.
-- **Location:** [crates/pontus-core/src/tls.rs](../crates/pontus-core/src/tls.rs), [crates/pontus-cli/src/main.rs](../crates/pontus-cli/src/main.rs) (scan loop), [crates/pontus-core/src/store.rs](../crates/pontus-core/src/store.rs).
-- **Effort:** medium
-- **Description.** `pontus-cli tls <host>` inspects one endpoint and prints a report, but the result is not recorded against the asset — so TLS findings don't participate in drift, baselines, or the risk view. The asset model (D-007) wants this as observation data.
-- **Proposal.** During a scan, run `tls::inspect` on open TLS ports and store the findings (expiry, deprecated protocol, weak cipher) as part of the observation, surfaced in the GUI asset detail and foldable into risk.
-- **Trade-offs.** Inspection adds several handshakes per TLS port, lengthening scans (gate behind a flag, like `--assess-vulns`); the data model needs a place for cert/finding records.
-- **Notes.** Builds on F-016/D-012. Pairs with [IMP-004](#imp-004-surface-the-os-guess-in-the-gui-inventory) (GUI surfacing).
-
 ### IMP-009: Capture certificates from TLS 1.3-only servers
 
 - **Status:** suggested
@@ -92,18 +81,40 @@ candidate.
 - **Trade-offs.** A real 1.3 handshake pulls in cryptography (the dependency D-012 deliberately avoided); rustls is the pragmatic route but adds a crypto provider (ring/aws-lc-rs). Worth it only if TLS 1.3-only endpoints without ≤1.2 become common in practice.
 - **Notes.** Documented limitation of D-012. Independent of [IMP-008](#imp-008-integrate-tls-inspection-into-the-scan--observation-model).
 
-### IMP-010: Fold web-tech fingerprinting into scans, with an updatable signature set
+### IMP-011: Updatable web-tech signature file
 
 - **Status:** suggested
-- **Found:** 2026-06-27, implementing F-017 as a standalone `http` command.
-- **Location:** [crates/pontus-core/src/webtech.rs](../crates/pontus-core/src/webtech.rs), [crates/pontus-cli/src/main.rs](../crates/pontus-cli/src/main.rs) (scan loop).
+- **Found:** 2026-06-27, splitting the unfinished half of IMP-010.
+- **Location:** [crates/pontus-core/src/webtech.rs](../crates/pontus-core/src/webtech.rs).
 - **Effort:** medium
-- **Description.** `pontus-cli http <host>` fingerprints one endpoint and prints the result, but (like TLS, IMP-008) it isn't recorded against the asset, so the stack doesn't participate in inventory/drift. The signature set is also compiled-in, unlike the OS corpus which a `--os-corpus` file can extend without a rebuild.
-- **Proposal.** During a scan, run `webtech::fingerprint` on open HTTP(S) ports and store the detected technologies as observation data; and lift the signatures into a JSON file layerable over built-in defaults (mirroring `OsCorpus`), so the community can extend coverage without a rebuild.
-- **Trade-offs.** Fetching pages adds latency and noise to scans (gate behind a flag); an external signature file invites the same clean-room discipline as the OS corpus (must not become a copy of Wappalyzer's dataset, C-001).
-- **Notes.** Pairs with [IMP-008](#imp-008-integrate-tls-inspection-into-the-scan--observation-model) and [IMP-004](#imp-004-surface-the-os-guess-in-the-gui-inventory) for a single "deep-inspection in the scan + GUI" push.
+- **Description.** The web-tech signature set is compiled-in, unlike the OS corpus which a `--os-corpus` file extends without a rebuild. Community coverage would grow faster from a layerable signature file.
+- **Proposal.** Lift the header/cookie/body signatures into a JSON schema and load a user file over the built-in defaults (mirroring `OsCorpus::load`), with a `--web-corpus` flag on the relevant commands.
+- **Trade-offs.** An external file invites the same clean-room discipline as the OS corpus — it must not become a copy of Wappalyzer's dataset (C-001) — and adds a schema to maintain.
+- **Notes.** The remaining half of [IMP-010](#imp-010-fold-web-tech-fingerprinting-into-scans); mirrors the `OsCorpus` design.
 
 ## Applied
+
+### IMP-008: Integrate TLS inspection into the scan / observation model
+
+- **Status:** applied (2026-06-27)
+- **Found:** 2026-06-27, implementing F-016 as a standalone `tls` command.
+- **Location:** [crates/pontus-core/src/model.rs](../crates/pontus-core/src/model.rs) (`TlsObservation`), [crates/pontus-cli/src/main.rs](../crates/pontus-cli/src/main.rs) (`scan --inspect`), [gui/src/mainwindow.cpp](../gui/src/mainwindow.cpp).
+- **Effort:** medium
+- **Description.** `pontus-cli tls <host>` printed a report but recorded nothing against the asset, so TLS findings didn't participate in the inventory.
+- **Proposal.** Add a `TlsObservation` to `PortObservation` (JSON in the observation `state`, no migration); during `scan --inspect`, run `tls::inspect` on open TLS ports (443/8443) and attach the summary (protocols, weak ciphers, cert subject/expiry/self-signed, findings); surface it in the GUI asset-detail "Deep inspection" panel.
+- **Trade-offs.** Inspection adds handshakes per TLS port, so it is opt-in (`--inspect`). The compact summary keeps the observation small; full detail stays in the `tls` command.
+- **Notes.** Stored as JSON state like `os_guess` (D-007's lightweight shape). Flows through `assets`/history FFI with no FFI change. Pairs with [IMP-004](#imp-004-surface-the-os-guess-in-the-gui-inventory).
+
+### IMP-010: Fold web-tech fingerprinting into scans
+
+- **Status:** applied (2026-06-27)
+- **Found:** 2026-06-27, implementing F-017 as a standalone `http` command.
+- **Location:** [crates/pontus-core/src/model.rs](../crates/pontus-core/src/model.rs) (`TechObservation`), [crates/pontus-cli/src/main.rs](../crates/pontus-cli/src/main.rs) (`scan --inspect`), [gui/src/mainwindow.cpp](../gui/src/mainwindow.cpp).
+- **Effort:** medium
+- **Description.** `pontus-cli http <host>` fingerprinted one endpoint but recorded nothing against the asset.
+- **Proposal.** Add `TechObservation`s to `PortObservation`; during `scan --inspect`, run `webtech::fingerprint` on open HTTP(S) ports (80/443/8080/8000/8443) and attach the detected technologies; surface them in the GUI deep-inspection panel.
+- **Trade-offs.** Fetching pages adds latency, so it shares the opt-in `--inspect` gate with TLS.
+- **Notes.** The "updatable signature file" half of the original idea (a JSON corpus mirroring `OsCorpus`) is **not** done — split out as [IMP-011](#imp-011-updatable-web-tech-signature-file). Stored as JSON state; no FFI change.
 
 ### IMP-004: Surface the OS guess in the GUI inventory
 

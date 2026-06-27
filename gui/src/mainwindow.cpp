@@ -7,6 +7,7 @@
 
 #include <QAction>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -27,6 +28,7 @@
 #include <QStringList>
 #include <QTableView>
 #include <QTableWidget>
+#include <QTextEdit>
 #include <QVBoxLayout>
 
 namespace {
@@ -41,6 +43,55 @@ QString portsSummary(const QJsonObject& state) {
                                              QString::number(p.value("port").toInt()));
     }
     return parts.isEmpty() ? QStringLiteral("-") : parts.join(", ");
+}
+
+// Render the TLS/web deep-inspection findings (F-016/F-017) recorded on an
+// observation's ports, for the detail pane.
+QString inspectionText(const QJsonObject& state) {
+    QStringList lines;
+    for (const QJsonValue& v : state.value("open_ports").toArray()) {
+        const QJsonObject p = v.toObject();
+        const int port = p.value("port").toInt();
+        const QJsonObject tls = p.value("tls").toObject();
+        if (!tls.isEmpty()) {
+            QStringList protos;
+            for (const QJsonValue& pv : tls.value("protocols").toArray()) {
+                protos << pv.toString();
+            }
+            lines << QStringLiteral("TLS :%1  %2").arg(port).arg(protos.join(", "));
+            QStringList weak;
+            for (const QJsonValue& wv : tls.value("weak_ciphers").toArray()) {
+                weak << wv.toString();
+            }
+            if (!weak.isEmpty()) {
+                lines << QStringLiteral("    weak ciphers: %1").arg(weak.join(", "));
+            }
+            const QString subj = tls.value("cert_subject").toString();
+            if (!subj.isEmpty()) {
+                lines << QStringLiteral("    cert: %1").arg(subj);
+            }
+            const QJsonValue notAfter = tls.value("cert_not_after");
+            if (notAfter.isDouble()) {
+                const QDateTime exp = QDateTime::fromSecsSinceEpoch(notAfter.toInteger(), Qt::UTC);
+                lines << QStringLiteral("    expires: %1").arg(exp.toString(QStringLiteral("yyyy-MM-dd")));
+            }
+            for (const QJsonValue& fv : tls.value("findings").toArray()) {
+                lines << QStringLiteral("    ! %1").arg(fv.toString());
+            }
+        }
+        const QJsonArray tech = p.value("tech").toArray();
+        if (!tech.isEmpty()) {
+            QStringList names;
+            for (const QJsonValue& tv : tech) {
+                const QJsonObject t = tv.toObject();
+                const QString name = t.value("name").toString();
+                const QString ver = t.value("version").toString();
+                names << (ver.isEmpty() ? name : QStringLiteral("%1 %2").arg(name, ver));
+            }
+            lines << QStringLiteral("Web :%1  %2").arg(port).arg(names.join(", "));
+        }
+    }
+    return lines.join(QStringLiteral("\n"));
 }
 
 QString orDash(const QJsonValue& v) {
@@ -136,10 +187,18 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     history_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     history_->setSelectionMode(QAbstractItemView::NoSelection);
 
+    // Deep-inspection findings (TLS/web, F-016/F-017) for the latest observation.
+    inspection_ = new QTextEdit;
+    inspection_->setReadOnly(true);
+    inspection_->setPlaceholderText(
+        QStringLiteral("TLS / web findings for the latest observation (scan with --inspect)"));
+
     auto* rightBox = new QGroupBox(QStringLiteral("Asset detail"));
     auto* rightLayout = new QVBoxLayout(rightBox);
     rightLayout->addWidget(detailHeader_);
-    rightLayout->addWidget(history_);
+    rightLayout->addWidget(history_, 3);
+    rightLayout->addWidget(new QLabel(QStringLiteral("Deep inspection (latest)")));
+    rightLayout->addWidget(inspection_, 1);
 
     auto* splitter = new QSplitter;
     splitter->addWidget(leftBox);
@@ -301,4 +360,11 @@ void MainWindow::showHistory(long long assetId, const QString& identity) {
     }
     history_->resizeColumnsToContents();
     history_->horizontalHeader()->setStretchLastSection(true);
+
+    // Deep-inspection findings for the newest observation (history is newest-first).
+    const QString inspection =
+        history.isEmpty() ? QString() : inspectionText(history.at(0).toObject().value("state").toObject());
+    inspection_->setPlainText(inspection.isEmpty()
+                                  ? QStringLiteral("No TLS/web findings — scan with --inspect.")
+                                  : inspection);
 }
