@@ -44,9 +44,13 @@ private:
     QLineEdit* targets_ = nullptr;
     QLineEdit* scope_ = nullptr;
     QLineEdit* tcpPorts_ = nullptr;
+    QLineEdit* topPorts_ = nullptr;
     QLineEdit* udpPorts_ = nullptr;
     QLineEdit* db_ = nullptr;
     QLineEdit* operator_ = nullptr;
+    QComboBox* detector_ = nullptr;
+    QCheckBox* assessVulns_ = nullptr;
+    QCheckBox* inspect_ = nullptr;
     QCheckBox* noRdns_ = nullptr;
     QPlainTextEdit* output_ = nullptr;
     QPushButton* runBtn_ = nullptr;

@@ -63,6 +63,8 @@ are complete and Phase 3 (Intelligence) is in progress; everything below is on
 - The scan diff keys on `(proto, port)` (`PortRef`), so `tcp/53` and `udp/53` are distinct findings.
 - The stateless SYN sweep was rebuilt around `BatchSender` with set-based reply matching to scale to wide ranges.
 - `--ports` (and `--udp-ports`) now accept ranges and mixed specs — `80,443,8000-8100`, `1-1024`, `-` for all of 1–65535 — de-duplicated and sorted; plus a `--top-ports <N>` preset over a curated clean-room common-ports list, unioned with `--ports`. Broad scanning is now a one-liner instead of a hand-typed list (F-002, IMP-013).
+- The GUI New-scan dialog now exposes the richer scan options — a Top-ports field, a Detector dropdown (native / nmap), and Assess-vulnerabilities / Deep-inspect (TLS+HTTP) checkboxes — threaded into the shelled-out command and saved with profiles, so a GUI-launched scan can be as thorough as a CLI one and populate the risk/heatmap/deep-inspection views (F-010, IMP-014).
+- `--assess-vulns` now also assesses the web technologies found by `--inspect`, not just the service detector's products — so the clean-room native detector plus `--inspect` matches web-server CVEs (e.g. nginx) without needing `--detector nmap` (F-015, IMP-015).
 
 ### Fixed
 
@@ -70,6 +72,7 @@ are complete and Phase 3 (Intelligence) is in progress; everything below is on
 - Vulnerability assessment is no longer silent: each assessment prints `vulns <port>: <product> <version> → N CVE(s)`, and an NVD lookup error is reported instead of being swallowed to an empty result (BUG-009).
 - The risk view's per-host CVE list is deduped by CVE in `risk_ranked`, so a product on multiple ports (e.g. 80 and 443) no longer lists each CVE twice or inflates the count (IMP-012).
 - The service/port heatmap is now scoped to a single scan (a selector, defaulting to the latest) over a new `pontus_observations_json` FFI, instead of mixing each host's latest observation across scans with different port coverage — which made the grid look inconsistent (BUG-010).
+- Wide scans no longer abort on `ENOBUFS`: the raw-socket send path treats a full transmit queue (os error 105) as transient backpressure — pacing and retrying rather than failing — so a `/24 × ~100 ports` sweep completes instead of erroring out (BUG-011).
 - Service banners no longer carry trailing dots from a stripped CRLF (`scan::stateful::sanitise`).
 - Muted note text is now theme-adaptive (`applyMutedText`) instead of `palette(mid)`, which was unreadable on dark themes.
 - The topology graph settles its layout before drawing — no on-screen jitter — and drag-to-pan / scroll-to-zoom now work.

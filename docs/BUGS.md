@@ -93,6 +93,16 @@ _None._
 - **Reproduction:** Scan a /24 broadly, then scan it again with a narrow `--ports` set; open the heatmap — hosts display ports from whichever scan last observed them, not a single coherent snapshot.
 - **Notes:** Fixed by scoping the heatmap to a single scan via a selector (default latest), over a new `pontus_observations_json(scan_id)` FFI (serialising `observations_for_scan`). Now every host is compared on the same port coverage, matching the scan-scoped risk and diff views. The narrower *cause* — GUI scans use fewer options than the CLI — is tracked as [IMP-014](IMPROVEMENTS.md).
 
+### BUG-011: Wide scans aborted on ENOBUFS (transmit-queue backpressure)
+
+- **Status:** fixed (2026-06-27)
+- **Found:** 2026-06-27, a `/24` scan with `--top-ports 100` (~25k SYN packets) failed immediately with "discovery I/O error: No buffer space available (os error 105)".
+- **Location:** [crates/pontus-core/src/raw.rs](../crates/pontus-core/src/raw.rs) — `BatchSender::send`, `send_to`.
+- **Severity:** High — a sufficiently wide scan (many hosts × many ports) failed entirely, so broad scanning (the whole point of IMP-013) was unusable.
+- **Description:** The raw-socket send path treated only `WouldBlock` as backpressure; `ENOBUFS` (the kernel's transmit queue momentarily full under a fast wide sweep) fell through to the fatal-error arm and aborted the scan, even though it is transient and recoverable.
+- **Reproduction:** Scan a `/24` with ~100 ports (≈25k SYN packets) fast enough to fill the qdisc; the sweep returns os error 105.
+- **Notes:** Fixed by classifying `ENOBUFS` as backpressure (`is_backpressure`) and pacing-then-retrying (200µs), dropping a single probe only after ~64 sustained retries so the sweep continues rather than failing. Unit test `enobufs_is_classified_as_backpressure`. The message said "discovery" because `ScanError` aliases `DiscoveryError`, so a SYN-sweep I/O error reuses the discovery wording — a clearer label would be a small follow-up.
+
 ## Won't Fix
 
 _None._
