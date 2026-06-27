@@ -44,16 +44,16 @@ Phases group features from [VISION.md](VISION.md). The ordering reflects D-006 (
 ## Phase 3 — Intelligence
 
 **Goal:** Turn raw scan data into actionable signal — detection, change-tracking, and triage-grade vulnerability intelligence.
-**Status:** In progress
+**Status:** Complete (2026-06-27)
 **Features delivered:** F-012, F-013, F-014, F-015, F-016, F-017
 **Deliverables:**
 - [x] `Detector` trait with native default detector (`detect::NativeDetector` — clean-room banner grammar + well-known ports, C-001; wired into the CLI so observations carry structured service/version)
 - [x] Optional Nmap-backed detector (`detect::NmapDetector` shells out to the user's own `nmap -sV` and parses its XML; never bundled, D-006/C-001; `pontus-cli --detector nmap`)
 - [x] Native OS fingerprinting with an updatable corpus (`os` module: passive p0f-style family-level guess from the SYN-ACK's TCP-option layout + TTL + window + DF bit + volunteered banner tokens, scored against a clean-room corpus that layers a user JSON file over built-in defaults; distinguishes Linux/Windows/macOS by stack signature; `pontus-cli scan` records it, `--os-corpus` updates signatures without a rebuild; plus an optional `--os-detector nmap` backend that shells out to the user's own `nmap -O` for a version-range guess; D-011, C-001)
-- [~] Scan diff + baseline designation + deviation view (all three landed early via the GUI: `diff_observations`, store-level baseline in a `meta` table, and the colour-coded drift view that defaults to the baseline)
+- [x] Scan diff + baseline designation + deviation view (all three landed early via the GUI: `diff_observations`, store-level baseline in a `meta` table, and the colour-coded drift view that defaults to the baseline)
 - [x] CVE matching (NVD/OSV) with EPSS + CISA KEV enrichment and composite risk score (D-009 hybrid; `intel` module: CPE-applicability matching via the NVD CPE+CVE APIs, EPSS + KEV enrichment, and the C-002 exploitation-weighted risk engine; `pontus-cli scan --assess-vulns` stores vulns and `pontus-cli risk` ranks hosts fix-first; GUI risk view — `View ▸ Risk / vulnerabilities…` over a shared `store::risk_ranked` + FFI `risk_json`: hosts worst-first with a per-host CVE breakdown, band-coloured, KEV-badged)
 - [x] TLS/SSL inspection (`tls` module: a clean-room, pure-Rust prober — no OpenSSL, D-012 — enumerating protocols SSLv3–TLS 1.3, probing weak-cipher acceptance, and capturing/inspecting the cert for expiry, self-signed, weak signature/key and SAN/hostname; `pontus-cli tls <host>`, scope-enforced; live-verified against badssl.com. CT cross-ref + TLS 1.3-only cert capture are follow-ups)
-- [ ] HTTP tech fingerprinting
+- [x] HTTP tech fingerprinting (`webtech` module: clean-room signature set over response headers, `<meta generator>` and body markers — servers, languages, frameworks, CMSes, JS libraries, CDNs, analytics, with versions where exposed; reuses `ureq`, C-001; `pontus-cli http <host>`, scope-enforced; live-verified on wordpress.org/python.org)
 
 **Acceptance:** a port opening between scans surfaces as an explicit change against baseline; a host with a KEV-listed vulnerable service sorts above a host with only a high-CVSS/low-EPSS issue; switching detection backends improves coverage with no code change.
 

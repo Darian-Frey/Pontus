@@ -21,6 +21,7 @@ pub mod scope;
 pub mod store;
 pub mod tls;
 pub mod traceroute;
+pub mod webtech;
 
 pub use detect::{Detector, NativeDetector, NmapDetector, PortProbe, Service};
 pub use intel::{CveRef, KevCatalog, RiskBand, Vuln, assess, band, host_risk, risk_score};
@@ -34,6 +35,7 @@ pub use os::{
 };
 pub use scope::{Scope, ScopeError};
 pub use tls::{CertInfo, Finding, ProtocolVersion, TlsReport, inspect};
+pub use webtech::{Category, Tech, WebFingerprint};
 pub use store::{
     AssetObservation, AssetSummary, AssetVuln, Edge, HostObservation, HostRisk, RankedVuln,
     ScanRef, Store,

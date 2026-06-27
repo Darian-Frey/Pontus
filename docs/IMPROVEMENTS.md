@@ -103,6 +103,17 @@ candidate.
 - **Trade-offs.** A real 1.3 handshake pulls in cryptography (the dependency D-012 deliberately avoided); rustls is the pragmatic route but adds a crypto provider (ring/aws-lc-rs). Worth it only if TLS 1.3-only endpoints without ≤1.2 become common in practice.
 - **Notes.** Documented limitation of D-012. Independent of [IMP-008](#imp-008-integrate-tls-inspection-into-the-scan--observation-model).
 
+### IMP-010: Fold web-tech fingerprinting into scans, with an updatable signature set
+
+- **Status:** suggested
+- **Found:** 2026-06-27, implementing F-017 as a standalone `http` command.
+- **Location:** [crates/pontus-core/src/webtech.rs](../crates/pontus-core/src/webtech.rs), [crates/pontus-cli/src/main.rs](../crates/pontus-cli/src/main.rs) (scan loop).
+- **Effort:** medium
+- **Description.** `pontus-cli http <host>` fingerprints one endpoint and prints the result, but (like TLS, IMP-008) it isn't recorded against the asset, so the stack doesn't participate in inventory/drift. The signature set is also compiled-in, unlike the OS corpus which a `--os-corpus` file can extend without a rebuild.
+- **Proposal.** During a scan, run `webtech::fingerprint` on open HTTP(S) ports and store the detected technologies as observation data; and lift the signatures into a JSON file layerable over built-in defaults (mirroring `OsCorpus`), so the community can extend coverage without a rebuild.
+- **Trade-offs.** Fetching pages adds latency and noise to scans (gate behind a flag); an external signature file invites the same clean-room discipline as the OS corpus (must not become a copy of Wappalyzer's dataset, C-001).
+- **Notes.** Pairs with [IMP-008](#imp-008-integrate-tls-inspection-into-the-scan--observation-model) and [IMP-004](#imp-004-surface-the-os-guess-in-the-gui-inventory) for a single "deep-inspection in the scan + GUI" push.
+
 ## Applied
 
 ### IMP-006: Capture the ICMP echo-reply TTL so portless hosts get an OS guess
