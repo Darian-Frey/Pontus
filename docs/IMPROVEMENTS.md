@@ -61,6 +61,17 @@ candidate.
 
 ## Applied
 
+### IMP-017: Self-healing CAP_NET_RAW in the make workflow
+
+- **Status:** applied (2026-06-28)
+- **Found:** 2026-06-28 — a GUI scan repeatedly fell back to unprivileged discovery because a rebuild had dropped the binary's capability and `make gui` didn't restore it.
+- **Location:** [Makefile](../Makefile).
+- **Effort:** trivial
+- **Description.** Capabilities live on the binary file, so every rebuild drops `CAP_NET_RAW`; the user had to remember a manual `make cap` after each `make build`, and forgetting it silently degraded GUI scans (D-008 relies on the file capability, not sudo).
+- **Proposal.** Make `cap` depend on `build` and re-apply the capability only when `getcap` shows it missing (so it's cheap and prompts for sudo only after an actual rebuild); make `gui` and `scan` depend on `cap`. The documented `make gui` / `make scan` workflow now self-heals.
+- **Trade-offs.** `make gui`/`make scan` now run an incremental build first (fast when up to date); a raw `cargo build` + direct binary run still needs a manual `setcap`.
+- **Notes.** Recurring foot-gun (hit three times during GUI testing). Docs: CLAUDE.md build section updated.
+
 ### IMP-011: Updatable web-tech signature file
 
 - **Status:** applied (2026-06-28)

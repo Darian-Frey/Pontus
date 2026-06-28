@@ -67,9 +67,9 @@ A root `Makefile` wraps the build/setcap/run loop (`make help` for the list):
 
 ```bash
 make build        # cargo build --release + build the Qt GUI (gui/build)
-make cap          # sudo setcap cap_net_raw+ep on the release CLI (re-run after each build)
+make cap          # build + setcap cap_net_raw+ep on the release CLI (sudo only if missing)
 make test         # cargo test
-make gui          # run the GUI, using the release CLI for scans
+make gui          # build + cap + run the GUI (GUI scans get raw privilege)
 make scan T=192.168.1.0/24 P=22,80,443 U=53,161,5353   # scope defaults to T
 ```
 
@@ -82,7 +82,7 @@ sudo setcap cap_net_raw+ep target/release/pontus-cli
 cmake -S gui -B gui/build && cmake --build gui/build   # Qt GUI (needs Qt6 + CMake)
 ```
 
-Raw-socket scanning requires `CAP_NET_RAW` (or root); prefer granting the capability over running as root. Capabilities are dropped on every rebuild, so re-run `make cap` (or the `setcap` line) after building.
+Raw-socket scanning requires `CAP_NET_RAW` (or root); prefer granting the capability over running as root. The capability lives on the binary file, so a rebuild drops it — but `make cap`/`make gui`/`make scan` all depend on `cap`, which re-applies it (one sudo prompt) **only when actually missing**, so the documented `make` workflow self-heals after a rebuild. (A raw `cargo build` + direct run still needs a manual `setcap`.)
 
 ## Conventions
 

@@ -60,7 +60,7 @@ are complete and Phase 3 (Intelligence) is in progress; everything below is on
 
 #### Tooling and documentation
 
-- A root `Makefile` wrapping the build / `setcap` / run loop (`make build`/`cap`/`gui`/`scan`).
+- A root `Makefile` wrapping the build / `setcap` / run loop (`make build`/`cap`/`gui`/`scan`). `cap` is idempotent (re-applies `CAP_NET_RAW` only when missing) and `gui`/`scan` depend on it, so the workflow self-heals the capability a rebuild drops — GUI scans keep raw privilege without a manual re-cap (IMP-017).
 - GUI interface design tiers (Minimum / Good / Great) added to the roadmap; the interface features were registered as F-029–F-035.
 
 ### Changed
