@@ -12,11 +12,14 @@
 //! tag, and tell-tale paths/scripts in the body (`/wp-content/`, `jquery-3.x.js`).
 
 use crate::error::{Error, Result};
+use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-/// What kind of technology a finding is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What kind of technology a finding is. The serde names (kebab-case) match
+/// [`Category::as_str`], so a corpus file writes `"js-library"`, `"cms"`, etc.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Category {
     Server,
     Language,
@@ -69,13 +72,13 @@ struct Response {
     body: String,
 }
 
-/// Fetch `url` and identify the technologies behind it (F-017).
-pub fn fingerprint(url: &str, timeout: Duration) -> Result<WebFingerprint> {
+/// Fetch `url` and identify the technologies behind it against `corpus` (F-017).
+pub fn fingerprint(url: &str, corpus: &WebCorpus, timeout: Duration) -> Result<WebFingerprint> {
     let resp = fetch(url, timeout)?;
     let mut techs = Vec::new();
-    detect_from_headers(&resp, &mut techs);
-    detect_from_cookies(&resp, &mut techs);
-    detect_from_body(&resp.body, &mut techs);
+    detect_from_headers(&resp, &corpus.headers, &mut techs);
+    detect_from_cookies(&resp, &corpus.cookies, &mut techs);
+    detect_from_body(&resp.body, &corpus.body, &corpus.scripts, &mut techs);
     dedup(&mut techs);
     Ok(WebFingerprint { url: url.to_string(), status: resp.status, techs })
 }
@@ -101,36 +104,141 @@ fn fetch(url: &str, timeout: Duration) -> Result<Response> {
 
 /// `Set-Cookie` name → (technology, category). The session-cookie name a stack
 /// sets is a strong, public tell.
-const COOKIE_SIGNATURES: &[(&str, &str, Category)] = &[
-    ("phpsessid", "PHP", Category::Language),
-    ("jsessionid", "Java", Category::Language),
-    ("asp.net_sessionid", "ASP.NET", Category::Framework),
-    ("aspsessionid", "ASP", Category::Framework),
-    ("laravel_session", "Laravel", Category::Framework),
-    ("ci_session", "CodeIgniter", Category::Framework),
-    ("csrftoken", "Django", Category::Framework),
-    ("django", "Django", Category::Framework),
-    ("_rails", "Ruby on Rails", Category::Framework),
-    ("wordpress_", "WordPress", Category::Cms),
-    ("wp-settings", "WordPress", Category::Cms),
-];
+/// A header-based signature: when `header` is present and its value contains
+/// `needle` (empty = presence alone), attribute `name`/`category`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct HeaderRule {
+    pub header: String,
+    #[serde(default)]
+    pub needle: String,
+    pub name: String,
+    pub category: Category,
+}
 
-/// Header (lower-case) → (substring to match, technology, category).
-const HEADER_SIGNATURES: &[(&str, &str, &str, Category)] = &[
-    ("x-drupal-cache", "", "Drupal", Category::Cms),
-    ("x-drupal-dynamic-cache", "", "Drupal", Category::Cms),
-    ("x-generator", "drupal", "Drupal", Category::Cms),
-    ("x-powered-by", "express", "Express", Category::Framework),
-    ("x-powered-by", "next.js", "Next.js", Category::Framework),
-    ("x-powered-by", "asp.net", "ASP.NET", Category::Framework),
-    ("x-aspnet-version", "", "ASP.NET", Category::Framework),
-    ("cf-ray", "", "Cloudflare", Category::Cdn),
-    ("x-served-by", "", "Fastly", Category::Cdn),
-    ("x-amz-cf-id", "", "Amazon CloudFront", Category::Cdn),
-    ("x-shopify-stage", "", "Shopify", Category::Cms),
-];
+/// A `Set-Cookie`-name / body substring → technology signature.
+#[derive(Debug, Clone, Deserialize)]
+pub struct MarkerRule {
+    pub needle: String,
+    pub name: String,
+    pub category: Category,
+}
 
-fn detect_from_headers(resp: &Response, out: &mut Vec<Tech>) {
+/// A JavaScript library matched by a script-src token, with version extraction.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ScriptRule {
+    pub needle: String,
+    pub name: String,
+}
+
+/// The web-tech signature set: built-in clean-room defaults, extensible by a user
+/// JSON file at runtime (mirrors `OsCorpus`, so coverage grows without a rebuild —
+/// IMP-011, C-001). The `Server` header, `<meta generator>` and `X-Powered-By`
+/// version parsing remain in code; these lists are the data that drives the rest.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WebCorpus {
+    #[serde(default)]
+    pub headers: Vec<HeaderRule>,
+    #[serde(default)]
+    pub cookies: Vec<MarkerRule>,
+    #[serde(default)]
+    pub body: Vec<MarkerRule>,
+    #[serde(default)]
+    pub scripts: Vec<ScriptRule>,
+}
+
+impl WebCorpus {
+    /// The built-in clean-room signature set.
+    pub fn builtin() -> Self {
+        let header = |h: &str, n: &str, t: &str, c: Category| HeaderRule {
+            header: h.to_string(),
+            needle: n.to_string(),
+            name: t.to_string(),
+            category: c,
+        };
+        let marker = |needle: &str, name: &str, c: Category| MarkerRule {
+            needle: needle.to_string(),
+            name: name.to_string(),
+            category: c,
+        };
+        let script = |needle: &str, name: &str| ScriptRule {
+            needle: needle.to_string(),
+            name: name.to_string(),
+        };
+        WebCorpus {
+            headers: vec![
+                header("x-drupal-cache", "", "Drupal", Category::Cms),
+                header("x-drupal-dynamic-cache", "", "Drupal", Category::Cms),
+                header("x-generator", "drupal", "Drupal", Category::Cms),
+                header("x-powered-by", "express", "Express", Category::Framework),
+                header("x-powered-by", "next.js", "Next.js", Category::Framework),
+                header("x-powered-by", "asp.net", "ASP.NET", Category::Framework),
+                header("x-aspnet-version", "", "ASP.NET", Category::Framework),
+                header("cf-ray", "", "Cloudflare", Category::Cdn),
+                header("x-served-by", "", "Fastly", Category::Cdn),
+                header("x-amz-cf-id", "", "Amazon CloudFront", Category::Cdn),
+                header("x-shopify-stage", "", "Shopify", Category::Cms),
+            ],
+            cookies: vec![
+                marker("phpsessid", "PHP", Category::Language),
+                marker("jsessionid", "Java", Category::Language),
+                marker("asp.net_sessionid", "ASP.NET", Category::Framework),
+                marker("aspsessionid", "ASP", Category::Framework),
+                marker("laravel_session", "Laravel", Category::Framework),
+                marker("ci_session", "CodeIgniter", Category::Framework),
+                marker("csrftoken", "Django", Category::Framework),
+                marker("django", "Django", Category::Framework),
+                marker("_rails", "Ruby on Rails", Category::Framework),
+                marker("wordpress_", "WordPress", Category::Cms),
+                marker("wp-settings", "WordPress", Category::Cms),
+            ],
+            body: vec![
+                marker("/wp-content/", "WordPress", Category::Cms),
+                marker("/wp-includes/", "WordPress", Category::Cms),
+                marker("/wp-json/", "WordPress", Category::Cms),
+                marker("drupal.settings", "Drupal", Category::Cms),
+                marker("/sites/default/files", "Drupal", Category::Cms),
+                marker("/media/jui/", "Joomla", Category::Cms),
+                marker("com_content", "Joomla", Category::Cms),
+                marker("/_next/static/", "Next.js", Category::Framework),
+                marker("__nuxt", "Nuxt.js", Category::Framework),
+                marker("ng-version", "Angular", Category::JsLibrary),
+                marker("data-reactroot", "React", Category::JsLibrary),
+                marker("csrf-param", "Ruby on Rails", Category::Framework),
+                marker("google-analytics.com/analytics.js", "Google Analytics", Category::Analytics),
+                marker("googletagmanager.com/gtag", "Google Analytics", Category::Analytics),
+            ],
+            scripts: vec![
+                script("jquery", "jQuery"),
+                script("bootstrap", "Bootstrap"),
+                script("vue", "Vue.js"),
+                script("react", "React"),
+                script("angular", "Angular"),
+            ],
+        }
+    }
+
+    /// Parse a corpus from JSON (any of the four lists may be present).
+    pub fn from_json(json: &str) -> Result<Self> {
+        serde_json::from_str(json).map_err(|e| Error::Http(e.to_string()))
+    }
+
+    /// Append another corpus's rules (user rules layer over the built-ins).
+    pub fn extend(&mut self, other: WebCorpus) {
+        self.headers.extend(other.headers);
+        self.cookies.extend(other.cookies);
+        self.body.extend(other.body);
+        self.scripts.extend(other.scripts);
+    }
+
+    /// The built-in corpus with the JSON file at `path` layered on top.
+    pub fn load(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        let mut corpus = Self::builtin();
+        corpus.extend(Self::from_json(&std::fs::read_to_string(path)?)?);
+        Ok(corpus)
+    }
+}
+
+fn detect_from_headers(resp: &Response, headers: &[HeaderRule], out: &mut Vec<Tech>) {
     // Server header: "nginx/1.18.0", "Apache/2.4.41", "Microsoft-IIS/10.0".
     if let Some(server) = resp.headers.get("server") {
         let (name, version) = split_name_version(server);
@@ -153,23 +261,33 @@ fn detect_from_headers(resp: &Response, out: &mut Vec<Tech>) {
             out.push(Tech { name: "PHP".to_string(), version, category: Category::Language, evidence: "X-Powered-By".to_string() });
         }
     }
-    for (header, needle, tech, cat) in HEADER_SIGNATURES {
-        if let Some(value) = resp.headers.get(*header) {
-            if needle.is_empty() || value.to_lowercase().contains(needle) {
-                let version = (*header == "x-aspnet-version").then(|| value.clone());
-                out.push(Tech { name: tech.to_string(), version, category: *cat, evidence: format!("{header} header") });
+    for rule in headers {
+        if let Some(value) = resp.headers.get(&rule.header) {
+            if rule.needle.is_empty() || value.to_lowercase().contains(&rule.needle) {
+                let version = (rule.header == "x-aspnet-version").then(|| value.clone());
+                out.push(Tech {
+                    name: rule.name.clone(),
+                    version,
+                    category: rule.category,
+                    evidence: format!("{} header", rule.header),
+                });
             }
         }
     }
 }
 
-fn detect_from_cookies(resp: &Response, out: &mut Vec<Tech>) {
+fn detect_from_cookies(resp: &Response, cookies: &[MarkerRule], out: &mut Vec<Tech>) {
     for cookie in &resp.cookies {
         // The cookie's name is everything before '='.
         let name = cookie.split('=').next().unwrap_or("").trim().to_lowercase();
-        for (needle, tech, cat) in COOKIE_SIGNATURES {
-            if name.contains(needle) {
-                out.push(Tech { name: tech.to_string(), version: None, category: *cat, evidence: "Set-Cookie".to_string() });
+        for rule in cookies {
+            if name.contains(&rule.needle) {
+                out.push(Tech {
+                    name: rule.name.clone(),
+                    version: None,
+                    category: rule.category,
+                    evidence: "Set-Cookie".to_string(),
+                });
             }
         }
     }
@@ -177,25 +295,7 @@ fn detect_from_cookies(resp: &Response, out: &mut Vec<Tech>) {
 
 // ---- body detection --------------------------------------------------------
 
-/// Body substring → (technology, category). Markers chosen to be specific.
-const BODY_SIGNATURES: &[(&str, &str, Category)] = &[
-    ("/wp-content/", "WordPress", Category::Cms),
-    ("/wp-includes/", "WordPress", Category::Cms),
-    ("/wp-json/", "WordPress", Category::Cms),
-    ("drupal.settings", "Drupal", Category::Cms),
-    ("/sites/default/files", "Drupal", Category::Cms),
-    ("/media/jui/", "Joomla", Category::Cms),
-    ("com_content", "Joomla", Category::Cms),
-    ("/_next/static/", "Next.js", Category::Framework),
-    ("__nuxt", "Nuxt.js", Category::Framework),
-    ("ng-version", "Angular", Category::JsLibrary),
-    ("data-reactroot", "React", Category::JsLibrary),
-    ("csrf-param", "Ruby on Rails", Category::Framework),
-    ("google-analytics.com/analytics.js", "Google Analytics", Category::Analytics),
-    ("googletagmanager.com/gtag", "Google Analytics", Category::Analytics),
-];
-
-fn detect_from_body(body: &str, out: &mut Vec<Tech>) {
+fn detect_from_body(body: &str, markers: &[MarkerRule], scripts: &[ScriptRule], out: &mut Vec<Tech>) {
     let lower = body.to_lowercase();
 
     // <meta name="generator" content="WordPress 6.4.2"> — name + version. Read
@@ -216,16 +316,26 @@ fn detect_from_body(body: &str, out: &mut Vec<Tech>) {
         }
     }
 
-    for (needle, tech, cat) in BODY_SIGNATURES {
-        if lower.contains(needle) {
-            out.push(Tech { name: tech.to_string(), version: None, category: *cat, evidence: "page markup".to_string() });
+    for rule in markers {
+        if lower.contains(&rule.needle) {
+            out.push(Tech {
+                name: rule.name.clone(),
+                version: None,
+                category: rule.category,
+                evidence: "page markup".to_string(),
+            });
         }
     }
 
     // JavaScript libraries from script filenames, with a version where present.
-    for (needle, tech) in &[("jquery", "jQuery"), ("bootstrap", "Bootstrap"), ("vue", "Vue.js"), ("react", "React"), ("angular", "Angular")] {
-        if let Some(version) = script_version(&lower, needle) {
-            out.push(Tech { name: tech.to_string(), version, category: Category::JsLibrary, evidence: "script src".to_string() });
+    for rule in scripts {
+        if let Some(version) = script_version(&lower, &rule.needle) {
+            out.push(Tech {
+                name: rule.name.clone(),
+                version,
+                category: Category::JsLibrary,
+                evidence: "script src".to_string(),
+            });
         }
     }
 }
@@ -338,10 +448,11 @@ mod tests {
     }
 
     fn run(r: &Response) -> Vec<Tech> {
+        let c = WebCorpus::builtin();
         let mut t = Vec::new();
-        detect_from_headers(r, &mut t);
-        detect_from_cookies(r, &mut t);
-        detect_from_body(&r.body, &mut t);
+        detect_from_headers(r, &c.headers, &mut t);
+        detect_from_cookies(r, &c.cookies, &mut t);
+        detect_from_body(&r.body, &c.body, &c.scripts, &mut t);
         dedup(&mut t);
         t
     }
@@ -395,5 +506,23 @@ mod tests {
     #[test]
     fn nothing_detected_is_empty() {
         assert!(run(&resp(&[], &[], "<html></html>")).is_empty());
+    }
+
+    #[test]
+    fn user_corpus_layers_over_builtin_without_a_rebuild() {
+        let mut c = WebCorpus::builtin();
+        c.extend(
+            WebCorpus::from_json(
+                r#"{ "headers": [{ "header": "x-bespoke", "name": "Bespoke", "category": "framework" }],
+                     "body": [{ "needle": "/acme-cms/", "name": "AcmeCMS", "category": "cms" }] }"#,
+            )
+            .unwrap(),
+        );
+        let r = resp(&[("X-Bespoke", "1")], &[], "<link href=\"/acme-cms/x.css\">");
+        let mut t = Vec::new();
+        detect_from_headers(&r, &c.headers, &mut t);
+        detect_from_body(&r.body, &c.body, &c.scripts, &mut t);
+        assert!(t.iter().any(|x| x.name == "Bespoke"), "user header rule fired");
+        assert!(t.iter().any(|x| x.name == "AcmeCMS"), "user body rule fired");
     }
 }

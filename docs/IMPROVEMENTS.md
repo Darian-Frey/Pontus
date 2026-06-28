@@ -59,18 +59,18 @@ candidate.
 - **Trade-offs.** A real 1.3 handshake pulls in cryptography (the dependency D-012 deliberately avoided); rustls is the pragmatic route but adds a crypto provider (ring/aws-lc-rs). Worth it only if TLS 1.3-only endpoints without ≤1.2 become common in practice.
 - **Notes.** Documented limitation of D-012. Independent of [IMP-008](#imp-008-integrate-tls-inspection-into-the-scan--observation-model).
 
+## Applied
+
 ### IMP-011: Updatable web-tech signature file
 
-- **Status:** suggested
+- **Status:** applied (2026-06-28)
 - **Found:** 2026-06-27, splitting the unfinished half of IMP-010.
-- **Location:** [crates/pontus-core/src/webtech.rs](../crates/pontus-core/src/webtech.rs).
+- **Location:** [crates/pontus-core/src/webtech.rs](../crates/pontus-core/src/webtech.rs) (`WebCorpus`), [crates/pontus-cli/src/main.rs](../crates/pontus-cli/src/main.rs).
 - **Effort:** medium
-- **Description.** The web-tech signature set is compiled-in, unlike the OS corpus which a `--os-corpus` file extends without a rebuild. Community coverage would grow faster from a layerable signature file.
-- **Proposal.** Lift the header/cookie/body signatures into a JSON schema and load a user file over the built-in defaults (mirroring `OsCorpus::load`), with a `--web-corpus` flag on the relevant commands.
-- **Trade-offs.** An external file invites the same clean-room discipline as the OS corpus — it must not become a copy of Wappalyzer's dataset (C-001) — and adds a schema to maintain.
-- **Notes.** The remaining half of [IMP-010](#imp-010-fold-web-tech-fingerprinting-into-scans); mirrors the `OsCorpus` design.
-
-## Applied
+- **Description.** The web-tech signatures were compiled-in, unlike the OS corpus a `--os-corpus` file extends without a rebuild.
+- **Proposal.** Lift the header/cookie/body/script signatures into a `WebCorpus` (mirroring `OsCorpus`: `builtin`/`from_json`/`extend`/`load`), keyed by a serde-friendly `Category`; add a `--web-corpus <path>` flag to `pontus-cli http` and `scan --inspect` that layers a user JSON file over the built-in defaults. `Server`/`<meta generator>`/`X-Powered-By` version parsing stays in code; the lists are the extensible data.
+- **Trade-offs.** A schema to maintain, and the same clean-room discipline as the OS corpus — it must not become a copy of Wappalyzer's dataset (C-001).
+- **Notes.** Completes [IMP-010](#imp-010-fold-web-tech-fingerprinting-into-scans). Test `user_corpus_layers_over_builtin_without_a_rebuild`; example at `examples/web-corpus.json`; live-verified (an `htmx` rule fired via `--web-corpus`).
 
 ### IMP-002: Support an NVD API key (and backoff) on the CVE-matching path
 

@@ -40,7 +40,7 @@ pub use os::{
 };
 pub use scope::{Scope, ScopeError};
 pub use tls::{CertInfo, Finding, ProtocolVersion, TlsReport, inspect};
-pub use webtech::{Category, Tech, WebFingerprint};
+pub use webtech::{Category, Tech, WebCorpus, WebFingerprint};
 pub use store::{
     AssetObservation, AssetSummary, AssetVuln, Edge, HostObservation, HostRisk, RankedVuln,
     ScanRef, Store,
