@@ -35,3 +35,39 @@ udp_ports = "53,123,161,5353"
 inspect = true
 assess_vulns = true
 operator = "daemon"
+
+# --- Alerting (F-019) ---
+#
+# After each scheduled scan, the daemon diffs it against the previous scan of the
+# same target range and fires any matching rules. Because a diff reports a change
+# once, an alert fires once per change (not every scan while the condition holds).
+# The first scan of a range has no baseline, so it never alerts.
+#
+# Channel URLs live under [channels.*]; `log` and `desktop` (notify-send) need no
+# config. A rule referencing webhook/slack/discord without a configured URL is
+# rejected at startup. (Email delivery is not yet implemented.)
+
+[channels.slack]
+url = "https://hooks.slack.com/services/XXXX/YYYY/ZZZZ"
+
+# [channels.discord]
+# url = "https://discord.com/api/webhooks/…"
+# [channels.webhook]
+# url = "https://example.internal/pontus-hook"   # receives the full alert JSON
+
+# Notify when SSH appears anywhere it wasn't before.
+[[alert]]
+name = "ssh-opened"
+on = "port_opened"
+port = 22
+proto = "tcp"
+channels = ["log", "slack"]
+
+# Notify when a previously-unseen host joins the network.
+[[alert]]
+name = "new-host"
+on = "host_new"
+channels = ["log", "slack"]
+
+# Conditions: port_opened, port_closed, host_new, host_vanished, host_changed,
+# address_moved. `port`/`proto` filter the two port_* conditions (omit = any).

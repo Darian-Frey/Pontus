@@ -17,10 +17,12 @@ are complete and Phase 3 (Intelligence) is in progress; everything below is on
 
 #### Phase 4 — monitoring and plugins
 
+- Alert rules and delivery (F-019). After each scheduled scan the daemon diffs it against the previous scan of the same target range and evaluates rules (conditions `port_opened`/`port_closed`/`host_new`/`host_vanished`/`host_changed`/`address_moved`, with optional port/proto filters). Matching is headless in `pontus_core::alert` (`evaluate` over the diff); because a diff reports a change once, an alert fires exactly once per change, and the first scan of a range never alerts (no baseline). Delivery (in the daemon): `log`, `desktop` (notify-send), generic `webhook`, and `slack`/`discord` webhook shapes — failures are logged, never fatal. Email/SMTP is the one channel still to come. Config via `[[alert]]` rules + `[channels.*]` URLs (validated at startup).
 - `pontus-daemon`: unattended scheduled rescans (F-018). A TOML config of jobs (targets/scope/interval plus the scan options that map to `pontus-cli scan` flags) drives one timer per job; each run shells out to the capability-granted CLI (D-008) so results land as ordinary append-only observations against the resolved assets (D-007), feeding drift/baseline/risk with no extra wiring. Scans serialise through a single-writer lock; `run_at_start` produces a baseline immediately; `--once` runs every job a single time (config check / cron). New `make daemon` target and `examples/pontus-daemon.toml`.
 
 #### Cross-cutting
 
+- The asset's MAC address is now shown explicitly in the GUI — a dedicated "MAC" column in the inventory and a "MAC:" line in the asset-detail panel (it reads "— (no MAC learned)" for IP-only hosts). Previously the MAC was only implicit in the Identity column of MAC-anchored rows. Backed by a new `mac` field on `AssetSummary` (flows through `pontus_assets_json`).
 - Local network configuration view (`netinfo` module): this machine's interfaces (IP/MAC/netmask) and listening ports, over FFI `pontus_local_config_json`, the `pontus-cli netinfo` command, and a GUI view (View ▸ Local network config, Ctrl+L). "Self" info, distinct from the asset model — interfaces via `pnet`, listening ports from `/proc/net` (F-036).
 - External CVE references: double-clicking a CVE in the risk view opens its NVD detail page in the default browser (F-037).
 

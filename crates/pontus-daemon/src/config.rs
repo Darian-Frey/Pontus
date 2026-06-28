@@ -5,8 +5,13 @@
 //! shelling out to `pontus-cli scan` (D-008) so all scan orchestration — and the
 //! raw-socket capability — stays on the one binary.
 
+use pontus_core::alert::{self, Condition};
 use serde::Deserialize;
 use std::time::Duration;
+
+/// Known alert channels. `webhook`/`slack`/`discord` require a matching
+/// `[channels.*]` table with a URL; `log` and `desktop` need no configuration.
+const KNOWN_CHANNELS: [&str; 5] = ["log", "desktop", "webhook", "slack", "discord"];
 
 /// Top-level daemon configuration, deserialised from the TOML config file.
 #[derive(Debug, Clone, Deserialize)]
@@ -25,6 +30,52 @@ pub struct Config {
     /// Scheduled scan jobs. Each `[[job]]` table is one entry.
     #[serde(rename = "job", default)]
     pub jobs: Vec<Job>,
+    /// Alert rules evaluated against drift after each scheduled scan (F-019).
+    #[serde(rename = "alert", default)]
+    pub alerts: Vec<AlertRule>,
+    /// Delivery channel configuration (URLs for webhook/Slack/Discord).
+    #[serde(default)]
+    pub channels: Channels,
+}
+
+/// An alert rule as written in the config. `on` deserialises straight to the
+/// core [`Condition`] (snake_case strings like `port_opened`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AlertRule {
+    /// Human label, used in logs and the delivered payload.
+    pub name: String,
+    /// The change to fire on (`port_opened`, `port_closed`, `host_new`,
+    /// `host_vanished`, `host_changed`, `address_moved`).
+    pub on: Condition,
+    /// Restrict port conditions to this port (omit = any).
+    #[serde(default)]
+    pub port: Option<u16>,
+    /// Restrict port conditions to this protocol (omit = any).
+    #[serde(default)]
+    pub proto: Option<String>,
+    /// Channels to deliver matches to (names from [`KNOWN_CHANNELS`]).
+    pub channels: Vec<String>,
+}
+
+/// Delivery channel configuration. Each is optional; a rule referencing a channel
+/// whose config is absent is rejected at load.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Channels {
+    #[serde(default)]
+    pub webhook: Option<WebhookChannel>,
+    #[serde(default)]
+    pub slack: Option<WebhookChannel>,
+    #[serde(default)]
+    pub discord: Option<WebhookChannel>,
+}
+
+/// A webhook-style channel: an HTTPS endpoint to POST JSON to.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WebhookChannel {
+    pub url: String,
 }
 
 /// One scheduled scan. Fields mirror the `pontus-cli scan` flags they map to, so
@@ -121,7 +172,55 @@ impl Config {
             parse_duration(&job.interval)
                 .map_err(|e| ConfigError::Invalid(format!("job {:?}: {e}", job.name)))?;
         }
+
+        let mut alert_names = std::collections::HashSet::new();
+        for a in &self.alerts {
+            if a.name.trim().is_empty() {
+                return Err(ConfigError::Invalid("an alert has an empty name".into()));
+            }
+            if !alert_names.insert(a.name.as_str()) {
+                return Err(ConfigError::Invalid(format!("duplicate alert name {:?}", a.name)));
+            }
+            if a.channels.is_empty() {
+                return Err(ConfigError::Invalid(format!("alert {:?} lists no channels", a.name)));
+            }
+            for ch in &a.channels {
+                if !KNOWN_CHANNELS.contains(&ch.as_str()) {
+                    return Err(ConfigError::Invalid(format!(
+                        "alert {:?}: unknown channel {ch:?} (known: {})",
+                        a.name,
+                        KNOWN_CHANNELS.join(", ")
+                    )));
+                }
+                let configured = match ch.as_str() {
+                    "webhook" => self.channels.webhook.is_some(),
+                    "slack" => self.channels.slack.is_some(),
+                    "discord" => self.channels.discord.is_some(),
+                    _ => true, // log/desktop need no config
+                };
+                if !configured {
+                    return Err(ConfigError::Invalid(format!(
+                        "alert {:?}: channel {ch:?} has no [channels.{ch}] url",
+                        a.name
+                    )));
+                }
+            }
+        }
         Ok(())
+    }
+
+    /// The configured alert rules as core [`alert::Rule`]s.
+    pub fn rules(&self) -> Vec<alert::Rule> {
+        self.alerts
+            .iter()
+            .map(|a| alert::Rule {
+                name: a.name.clone(),
+                condition: a.on,
+                port: a.port,
+                proto: a.proto.clone(),
+                channels: a.channels.clone(),
+            })
+            .collect()
     }
 }
 
@@ -234,19 +333,70 @@ mod tests {
             no_traceroute: false,
         };
 
-        let empty = Config { db: "x".into(), cli: "c".into(), run_at_start: true, jobs: vec![] };
-        assert!(empty.validate().is_err(), "no jobs");
-
-        let dup = Config {
+        let cfg = |jobs| Config {
             db: "x".into(),
             cli: "c".into(),
             run_at_start: true,
-            jobs: vec![base(), base()],
+            jobs,
+            alerts: vec![],
+            channels: Channels::default(),
         };
-        assert!(dup.validate().is_err(), "duplicate name");
 
-        let ok = Config { db: "x".into(), cli: "c".into(), run_at_start: true, jobs: vec![base()] };
-        assert!(ok.validate().is_ok());
+        assert!(cfg(vec![]).validate().is_err(), "no jobs");
+        assert!(cfg(vec![base(), base()]).validate().is_err(), "duplicate name");
+        assert!(cfg(vec![base()]).validate().is_ok());
+    }
+
+    #[test]
+    fn alert_referencing_unconfigured_channel_is_rejected() {
+        let text = r#"
+[[job]]
+name = "j"
+targets = "10.0.0.0/24"
+interval = "1h"
+
+[[alert]]
+name = "ssh"
+on = "port_opened"
+port = 22
+channels = ["slack"]
+"#;
+        // slack channel referenced but no [channels.slack] url configured.
+        let cfg: Config = toml::from_str(text).unwrap();
+        assert!(cfg.validate().is_err(), "slack channel has no url");
+    }
+
+    #[test]
+    fn alert_rules_parse_and_convert_to_core_rules() {
+        let text = r#"
+[[job]]
+name = "j"
+targets = "10.0.0.0/24"
+interval = "1h"
+
+[channels.slack]
+url = "https://hooks.slack.com/services/XXX"
+
+[[alert]]
+name = "ssh-opened"
+on = "port_opened"
+port = 22
+proto = "tcp"
+channels = ["log", "slack"]
+
+[[alert]]
+name = "new-host"
+on = "host_new"
+channels = ["log"]
+"#;
+        let cfg: Config = toml::from_str(text).unwrap();
+        cfg.validate().unwrap();
+        let rules = cfg.rules();
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[0].condition, Condition::PortOpened);
+        assert_eq!(rules[0].port, Some(22));
+        assert_eq!(rules[0].channels, vec!["log", "slack"]);
+        assert_eq!(rules[1].condition, Condition::HostNew);
     }
 
     #[test]

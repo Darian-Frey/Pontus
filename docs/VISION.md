@@ -149,8 +149,8 @@ Wappalyzer-style stack identification from headers/markup. The `webtech` module 
 `pontus-daemon` running scheduled rescans and persisting results. A TOML config of jobs (targets/scope/ports/interval + scan options) drives one timer per job; each run shells out to the capability-granted `pontus-cli scan` (D-008), so results land as ordinary append-only observations (D-007) and scans serialise through a single-writer lock. `--once` runs every job a single time (config check / cron use). **Acceptance:** a scheduled rescan runs unattended and writes observations to the store. ✅ (live: a daemon-driven loopback scan wrote a durable asset + observation).
 
 ### F-019 Alert rules & delivery
-**Priority:** Should · **Status:** Not started
-Per-profile rules ("notify if port 22 opens on any server") with delivery to desktop/email/webhook/Slack/Discord. **Acceptance:** a matching change fires exactly one alert via a configured channel.
+**Priority:** Should · **Status:** Done (email channel pending)
+Rules ("notify if port 22 opens on any server") evaluated by the daemon against drift after each scheduled scan, with delivery to desktop/webhook/Slack/Discord. Matching is headless (`alert::evaluate` over the scan diff — conditions `port_opened`/`port_closed`/`host_new`/`host_vanished`/`host_changed`/`address_moved`, with port/proto filters); "exactly once" falls out of diffing consecutive scans (a change appears in the diff once). Delivery lives in the daemon (`log`, `desktop` via notify-send, generic `webhook`, `slack`/`discord` webhook shapes); **email/SMTP is the remaining channel** (a dependency decision, deferred). **Acceptance:** a matching change fires exactly one alert via a configured channel. ✅ (live: a newly-opened port fired one alert delivered over a webhook, the prior/identical scans firing none).
 
 ### F-020 Multi-language plugin system
 **Priority:** Should · **Status:** Not started

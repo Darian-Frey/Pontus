@@ -6,6 +6,7 @@
 //! daemon itself holds no raw-socket privilege and never touches the store
 //! directly — it is purely a scheduler.
 
+mod alerts;
 mod config;
 mod logging;
 mod scheduler;
@@ -53,6 +54,10 @@ async fn main() -> ExitCode {
             job.name, job.targets, job.interval
         ));
     }
+    let rules = Arc::new(cfg.rules());
+    if !rules.is_empty() {
+        logging::info(&format!("  {} alert rule(s) active", rules.len()));
+    }
 
     // One SQLite writer at a time: scans serialise through this lock.
     let scan_lock = Arc::new(Mutex::new(()));
@@ -60,10 +65,11 @@ async fn main() -> ExitCode {
     let mut handles = Vec::new();
     for job in cfg.jobs.clone() {
         let cfg = Arc::clone(&cfg);
+        let rules = Arc::clone(&rules);
         let lock = Arc::clone(&scan_lock);
         let once = cli.once;
         handles.push(tokio::spawn(async move {
-            scheduler::run_job(cfg, job, lock, once).await;
+            scheduler::run_job(cfg, rules, job, lock, once).await;
         }));
     }
 

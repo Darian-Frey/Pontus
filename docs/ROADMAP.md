@@ -66,7 +66,7 @@ Phases group features from [VISION.md](VISION.md). The ordering reflects D-006 (
 **Features delivered:** F-018, F-019, F-020, F-021, F-022
 **Deliverables:**
 - [x] `pontus-daemon`: scheduled rescans persisting to the store (F-018)
-- [ ] Alert rules + delivery (desktop/email/webhook/Slack/Discord)
+- [x] Alert rules + delivery (desktop/webhook/Slack/Discord; email pending) (F-019)
 - [ ] `pontus-plugins`: stable `Finding` API with pyo3 / mlua / wasmtime runners (D-003)
 - [ ] First-party plugins: SMB enum, SNMP walk, SSH host-key, HTTP header audit
 - [ ] Credentialed scanning (user-supplied SSH/SNMP) for inventory depth
