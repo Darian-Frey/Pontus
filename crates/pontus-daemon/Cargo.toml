@@ -9,13 +9,17 @@ name = "pontus-daemon"
 path = "src/main.rs"
 
 [dependencies]
-# The daemon is a thin scheduler: it shells out to the (capability-granted)
-# pontus-cli for each rescan (D-008), so it needs no raw-socket privilege and
-# does not depend on pontus-core. Keeping it decoupled means scan orchestration
-# lives in exactly one place (the CLI / core), not two.
+# Scanning is delegated to the (capability-granted) pontus-cli via shell-out
+# (D-008), so the daemon needs no raw-socket privilege. It does link pontus-core
+# read-only for the alert path (F-019): after a scheduled scan it opens the store,
+# diffs the new scan against the prior one and evaluates alert rules. Privileged
+# scanning stays a shell-out; read + diff + rule-match is in-process core (D-001).
+pontus-core = { path = "../pontus-core" }
 tokio = { workspace = true, features = ["process", "signal"] }
 serde = { workspace = true }
+serde_json = { workspace = true }
 toml = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 thiserror = { workspace = true }
+ureq = { workspace = true }

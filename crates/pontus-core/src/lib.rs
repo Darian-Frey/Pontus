@@ -6,6 +6,7 @@
 //! resolve to durable assets, and a scan writes append-only observations against
 //! them (D-007).
 
+pub mod alert;
 pub mod detect;
 pub mod diff;
 pub mod discovery;
@@ -24,6 +25,7 @@ pub mod tls;
 pub mod traceroute;
 pub mod webtech;
 
+pub use alert::{Alert, Condition, Rule, evaluate};
 pub use detect::{Detector, NativeDetector, NmapDetector, PortProbe, Service};
 pub use intel::{CveRef, KevCatalog, RiskBand, Vuln, assess, band, host_risk, risk_score};
 pub use diff::{HostDiff, HostStatus, PortRef, diff_observations};
