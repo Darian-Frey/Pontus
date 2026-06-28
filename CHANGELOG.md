@@ -76,6 +76,7 @@ are complete and Phase 3 (Intelligence) is in progress; everything below is on
 
 ### Fixed
 
+- One physical host no longer appears twice in the inventory. A host first seen via ARP (MAC-anchored) and later seen via ICMP only — a sighting carrying no MAC — previously forked a second, IP-anchored asset; the bare-IP fallback in identity resolution now attaches a genuinely MAC-less sighting to whichever asset already lives at that address (most-recent-first, so a recycled lease follows its present tenant), while a sighting with a new, unmatched MAC is still treated as a distinct host (BUG-012, F-004, C-003). Prevention only — append-only observations (D-007) mean pre-existing duplicates can't be merged retroactively.
 - The KEV cache is now found under `sudo`: `default_cache_dir` prefers the invoking user's cache (`/home/$SUDO_USER/.cache/pontus`) so a catalogue cached by `intel update` (run as the user) is used by a privileged `scan --assess-vulns` (BUG-008).
 - Vulnerability assessment is no longer silent: each assessment prints `vulns <port>: <product> <version> → N CVE(s)`, and an NVD lookup error is reported instead of being swallowed to an empty result (BUG-009).
 - The risk view's per-host CVE list is deduped by CVE in `risk_ranked`, so a product on multiple ports (e.g. 80 and 443) no longer lists each CVE twice or inflates the count (IMP-012).

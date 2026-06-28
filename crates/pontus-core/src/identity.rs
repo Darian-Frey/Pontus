@@ -25,9 +25,8 @@ pub fn resolve(conn: &Connection, sig: &IdentitySignals, now: &str) -> Result<i6
     }
 
     // Look for an existing asset by the strongest signal first, stopping at the
-    // first hit. A bare IP only matches an asset that is *itself* IP-anchored, so
-    // a stronger-identified host reappearing on a recycled address is never
-    // mistaken for the previous tenant of that address.
+    // first hit. The bare-IP fallback (below) is the last resort and needs its own
+    // rule for *which* host currently lives at an address.
     let mut found = None;
     if let Some(v) = &sig.mac {
         found = lookup(conn, "mac", v)?;
@@ -44,13 +43,38 @@ pub fn resolve(conn: &Connection, sig: &IdentitySignals, now: &str) -> Result<i6
     }
     if found.is_none() {
         if let Some(v) = &ip {
-            found = conn
-                .query_row(
-                    "SELECT id FROM assets WHERE last_ip = ?1 AND identity_kind = 'ip'",
-                    params![v],
-                    |r| r.get(0),
-                )
-                .optional()?;
+            // We reach here only after every stronger signal the sighting *carried*
+            // has already missed. Two cases, and the distinction is load-bearing:
+            //
+            //  * The sighting is genuinely bare-IP (no MAC, host key or hostname) —
+            //    e.g. the host answered ICMP but ARP didn't fire this scan. Attach it
+            //    to whichever asset already lives at that address, most recent first
+            //    so a recycled lease resolves to its present tenant, regardless of how
+            //    that asset is anchored. This is the identity-merge fix (BUG-012):
+            //    without it, a host first seen by ARP and later seen by ICMP-only
+            //    forked a second, IP-anchored asset, so one physical host showed up
+            //    twice in the inventory.
+            //
+            //  * The sighting *did* carry a stronger signal that simply didn't match
+            //    (a new, unseen MAC). That is a different host — never fold it into the
+            //    current tenant by address. It may only *promote* an existing
+            //    IP-anchored asset at that IP (a host first seen bare-IP, now learning
+            //    its MAC), so the match is restricted to `identity_kind = 'ip'`.
+            //
+            // Either way IP is never an *anchor* — merge() re-derives the anchor from
+            // the strongest stored field — only a fallback *locator*.
+            //
+            // Reversal: if lease churn causes a bare-IP sighting to be mis-attributed
+            // to a just-departed tenant in practice, restrict the bare-IP branch back
+            // to `identity_kind = 'ip'` (reintroducing the duplicate) or add a recency
+            // window on last_seen.
+            let bare_ip = sig.mac.is_none() && sig.host_key.is_none() && sig.hostname.is_none();
+            let sql = if bare_ip {
+                "SELECT id FROM assets WHERE last_ip = ?1 ORDER BY last_seen DESC, id DESC LIMIT 1"
+            } else {
+                "SELECT id FROM assets WHERE last_ip = ?1 AND identity_kind = 'ip'"
+            };
+            found = conn.query_row(sql, params![v], |r| r.get(0)).optional()?;
         }
     }
 

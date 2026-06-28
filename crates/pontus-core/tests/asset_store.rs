@@ -49,6 +49,71 @@ fn forced_ip_change_resolves_to_the_same_asset() {
 }
 
 #[test]
+fn icmp_only_sighting_after_arp_resolves_to_the_same_asset() {
+    // The identity-merge fix (BUG-012). Scan 1 sees the host via ARP, so it carries
+    // a MAC and anchors a MAC-identified asset. Scan 2 sees the *same* host via ICMP
+    // only (ARP didn't fire) — no MAC, just the IP. The MAC-less sighting must attach
+    // to the existing asset, not fork a second, IP-anchored one.
+    let store = Store::open_in_memory().unwrap();
+
+    let s1 = store.begin_scan("n", "s", None).unwrap();
+    let a1 = store.record(&sig(Some("aa:bb:cc:dd:ee:ff"), "192.168.1.10"), s1, &up()).unwrap();
+    store.finish_scan(s1).unwrap();
+
+    let s2 = store.begin_scan("n", "s", None).unwrap();
+    let a2 = store.record(&sig(None, "192.168.1.10"), s2, &up()).unwrap();
+    store.finish_scan(s2).unwrap();
+
+    assert_eq!(a1, a2, "a MAC-less sighting at a known host's IP must not fork an asset");
+    assert_eq!(store.asset_count().unwrap(), 1, "no duplicate IP-anchored asset (BUG-012)");
+    assert_eq!(store.observation_count().unwrap(), 2);
+}
+
+#[test]
+fn a_distinct_mac_at_a_known_ip_stays_its_own_asset() {
+    // The recycle guard the merge must not break: a *different* host seen by ARP at
+    // an address a previous host used is unambiguous (the MAC anchors it), so it is
+    // never folded into the prior tenant (C-003).
+    let store = Store::open_in_memory().unwrap();
+
+    let s1 = store.begin_scan("n", "s", None).unwrap();
+    let a1 = store.record(&sig(Some("aa:aa:aa:aa:aa:aa"), "192.168.1.10"), s1, &up()).unwrap();
+    store.finish_scan(s1).unwrap();
+
+    let s2 = store.begin_scan("n", "s", None).unwrap();
+    let a2 = store.record(&sig(Some("bb:bb:bb:bb:bb:bb"), "192.168.1.10"), s2, &up()).unwrap();
+    store.finish_scan(s2).unwrap();
+
+    assert_ne!(a1, a2, "a new MAC at a recycled address is its own host");
+    assert_eq!(store.asset_count().unwrap(), 2);
+}
+
+#[test]
+fn a_bare_ip_resolves_to_the_most_recent_tenant_of_that_address() {
+    // When a lease is recycled and we later get a MAC-less sighting, it should land
+    // on whichever host most recently held the address, not the departed one.
+    let store = Store::open_in_memory().unwrap();
+
+    // Old tenant, then a new tenant takes the same IP (both seen via ARP).
+    let s1 = store.begin_scan("n", "s", None).unwrap();
+    let old = store.record(&sig(Some("aa:aa:aa:aa:aa:aa"), "192.168.1.10"), s1, &up()).unwrap();
+    store.finish_scan(s1).unwrap();
+
+    let s2 = store.begin_scan("n", "s", None).unwrap();
+    let new = store.record(&sig(Some("bb:bb:bb:bb:bb:bb"), "192.168.1.10"), s2, &up()).unwrap();
+    store.finish_scan(s2).unwrap();
+
+    // A later ICMP-only sighting of that address resolves to the current tenant.
+    let s3 = store.begin_scan("n", "s", None).unwrap();
+    let seen = store.record(&sig(None, "192.168.1.10"), s3, &up()).unwrap();
+    store.finish_scan(s3).unwrap();
+
+    assert_eq!(seen, new, "a bare IP follows the most recent tenant");
+    assert_ne!(seen, old);
+    assert_eq!(store.asset_count().unwrap(), 2, "no third asset spawned");
+}
+
+#[test]
 fn observations_cannot_be_mutated_through_the_store_connection() {
     let store = Store::open_in_memory().unwrap();
     let s = store.begin_scan("n", "s", None).unwrap();
