@@ -1,0 +1,19 @@
+{
+  "_comment": "Example web-tech signature corpus for `pontus-cli http --web-corpus` and `scan --inspect --web-corpus`. These rules are LAYERED OVER the built-in clean-room defaults. Categories: server, language, framework, cms, js-library, cdn, analytics. Keep entries clean-room — derive them from public product behaviour, not from Wappalyzer's dataset (C-001). `headers[].needle` is a case-insensitive substring of the header value (empty = presence alone); `cookies[].needle` matches a Set-Cookie name; `body[].needle` is a lowercase substring of the page; `scripts[].needle` is a script-src token whose trailing version is extracted.",
+  "headers": [
+    { "header": "x-powered-by", "needle": "phusion passenger", "name": "Phusion Passenger", "category": "server" },
+    { "header": "x-sourcefiles", "name": "ASP.NET MVC", "category": "framework" }
+  ],
+  "cookies": [
+    { "needle": "sails.sid", "name": "Sails.js", "category": "framework" },
+    { "needle": "connect.sid", "name": "Express", "category": "framework" }
+  ],
+  "body": [
+    { "needle": "ghost-portal", "name": "Ghost", "category": "cms" },
+    { "needle": "/cdn-cgi/", "name": "Cloudflare", "category": "cdn" }
+  ],
+  "scripts": [
+    { "needle": "alpine", "name": "Alpine.js" },
+    { "needle": "htmx", "name": "htmx" }
+  ]
+}

@@ -85,6 +85,9 @@ struct HttpArgs {
     /// Port to fetch (443 → https, otherwise http).
     #[arg(long, default_value_t = 443)]
     port: u16,
+    /// Web-tech signature corpus (JSON) layered over the built-in defaults (F-017).
+    #[arg(long, value_name = "PATH")]
+    web_corpus: Option<String>,
     /// Request timeout, milliseconds.
     #[arg(long, default_value_t = 6000)]
     timeout_ms: u64,
@@ -191,6 +194,10 @@ struct ScanArgs {
     /// so signatures can be added without a rebuild (F-013).
     #[arg(long, value_name = "PATH")]
     os_corpus: Option<String>,
+    /// Web-tech signature corpus (JSON) layered over the built-in defaults, for
+    /// `--inspect` (F-017).
+    #[arg(long, value_name = "PATH")]
+    web_corpus: Option<String>,
     /// Deep-inspect open TLS/HTTP ports: TLS protocols/ciphers/cert (F-016) and
     /// web technology stack (F-017), recorded on the observation. Adds handshakes
     /// and requests, so it is opt-in.
@@ -326,6 +333,13 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         OsDetectorKind::Native => Box::new(os::NativeOsDetector::new(os_corpus)),
         OsDetectorKind::Nmap => Box::new(os::NmapOsDetector::new()),
     };
+
+    // Web-tech corpus for `--inspect` (F-017): built-in defaults plus an optional
+    // user file (IMP-011).
+    let web_corpus = match &args.web_corpus {
+        Some(path) => pontus_core::WebCorpus::load(path)?,
+        None => pontus_core::WebCorpus::builtin(),
+    };
     if args.os_detector == OsDetectorKind::Nmap {
         println!("note: --os-detector nmap runs `nmap -O` per host, which needs root — run via sudo");
     }
@@ -399,7 +413,7 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
                 if matches!(po.port, 80 | 443 | 8080 | 8000 | 8443) {
                     let scheme = if matches!(po.port, 443 | 8443) { "https" } else { "http" };
                     let url = format!("{scheme}://{url_host}:{}/", po.port);
-                    if let Ok(fp) = pontus_core::webtech::fingerprint(&url, timeout) {
+                    if let Ok(fp) = pontus_core::webtech::fingerprint(&url, &web_corpus, timeout) {
                         po.tech = fp.techs.iter().map(tech_to_obs).collect();
                     }
                 }
@@ -835,10 +849,14 @@ fn run_http(args: HttpArgs) -> Result<(), Box<dyn std::error::Error>> {
     let scope = Scope::parse(&scope_specs)?;
     scope.ensure(addr.ip())?;
 
+    let corpus = match &args.web_corpus {
+        Some(path) => pontus_core::WebCorpus::load(path)?,
+        None => pontus_core::WebCorpus::builtin(),
+    };
     let scheme = if args.port == 443 { "https" } else { "http" };
     let url = format!("{scheme}://{}:{}/", args.target, args.port);
     println!("http: {url}  ({})", addr.ip());
-    let fp = pontus_core::webtech::fingerprint(&url, Duration::from_millis(args.timeout_ms))?;
+    let fp = pontus_core::webtech::fingerprint(&url, &corpus, Duration::from_millis(args.timeout_ms))?;
     print_web_fingerprint(&fp);
     Ok(())
 }

@@ -142,7 +142,7 @@ Cert chain, expiry, weak ciphers, SNI, certificate-transparency cross-reference.
 
 ### F-017 HTTP tech fingerprinting
 **Priority:** Could · **Status:** Done (core + CLI)
-Wappalyzer-style stack identification from headers/markup. The `webtech` module identifies servers, languages, frameworks, CMSes, JS libraries, CDNs and analytics from response headers (`Server`, `X-Powered-By`, `Set-Cookie`, CDN markers), the `<meta generator>` tag and tell-tale paths/scripts — with versions where exposed. Clean-room signature set (C-001; not derived from Wappalyzer's dataset), reusing the existing `ureq` client. `pontus-cli http <host>` reports it, scope-enforced. **Acceptance:** identifies server, framework and common front-end libraries on a reference site — met, live-verified (wordpress.org → nginx + WordPress 7.1; python.org → nginx + jQuery + Fastly).
+Wappalyzer-style stack identification from headers/markup. The `webtech` module identifies servers, languages, frameworks, CMSes, JS libraries, CDNs and analytics from response headers (`Server`, `X-Powered-By`, `Set-Cookie`, CDN markers), the `<meta generator>` tag and tell-tale paths/scripts — with versions where exposed. Clean-room signature set (C-001; not derived from Wappalyzer's dataset), reusing the existing `ureq` client, and extensible at runtime via a `--web-corpus <path>` JSON file layered over the built-in defaults (IMP-011, mirroring the OS corpus). `pontus-cli http <host>` reports it, scope-enforced. **Acceptance:** identifies server, framework and common front-end libraries on a reference site — met, live-verified (wordpress.org → nginx + WordPress 7.1; python.org → nginx + jQuery + Fastly).
 
 ### F-018 Monitoring daemon
 **Priority:** Should · **Status:** Not started
