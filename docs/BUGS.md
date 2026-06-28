@@ -103,6 +103,16 @@ _None._
 - **Reproduction:** Scan a `/24` with ~100 ports (≈25k SYN packets) fast enough to fill the qdisc; the sweep returns os error 105.
 - **Notes:** Fixed by classifying `ENOBUFS` as backpressure (`is_backpressure`) and pacing-then-retrying (200µs), dropping a single probe only after ~64 sustained retries so the sweep continues rather than failing. Unit test `enobufs_is_classified_as_backpressure`. The message said "discovery" because `ScanError` aliases `DiscoveryError`, so a SYN-sweep I/O error reuses the discovery wording — a clearer label would be a small follow-up.
 
+### BUG-004: NVD anonymous rate limiting can throttle or fail enrichment on large scans
+
+- **Status:** fixed (2026-06-28)
+- **Found:** 2026-06-26, observed during F-015 development.
+- **Location:** [crates/pontus-core/src/intel.rs](../crates/pontus-core/src/intel.rs) — `http_get`.
+- **Severity:** Low — affected scan throughput and completeness on large estates, not correctness of what was matched.
+- **Description:** The NVD CPE and CVE APIs rate-limit anonymous clients (~5 requests / 30 s). A scan assessing many distinct products issues a request per product, so a large estate could be throttled — slowing assessment or dropping enrichment for some services.
+- **Reproduction:** Run `scan --assess-vulns` against a subnet with many distinct products and observe pacing / HTTP 403s from NVD.
+- **Notes:** Fixed via [IMP-002](IMPROVEMENTS.md): an optional `NVD_API_KEY` raises the limit, and 403/429/503 are retried with exponential backoff instead of failing. Per-product caching still reduces the request count.
+
 ## Won't Fix
 
 _None._
@@ -117,17 +127,7 @@ _None._
 - **Severity:** Medium — noisy rather than dangerous: it over-reports (lists CVEs across all versions of a product) rather than under-reporting, but it dilutes the "fix-this-first" signal for services detected without a version.
 - **Description:** When the detector reports a product with no version (e.g. nginx with a version-suppressed banner), the CPE `virtualMatchString` cannot constrain by version, so every CVE ever filed against the product matches. Version-present matching (e.g. OpenSSH 8.2p1) is precise; version-absent matching is product-wide.
 - **Reproduction:** Assess a service detected with a product but no version and compare the CVE count against the same product pinned to a single version.
-- **Notes:** Inherent to CPE applicability matching without a version — not a coding defect. Candidate mitigation tracked as [IMP-003](IMPROVEMENTS.md) (flag version-less findings as low-confidence in the risk view rather than suppressing them). Deferred pending a decision on how to surface match confidence.
-
-### BUG-004: NVD anonymous rate limiting can throttle or fail enrichment on large scans
-
-- **Status:** deferred
-- **Found:** 2026-06-26, observed during F-015 development.
-- **Location:** [crates/pontus-core/src/intel.rs](../crates/pontus-core/src/intel.rs) — `fetch_nvd` / `resolve_cpe`.
-- **Severity:** Low — affects scan throughput and completeness on large estates, not correctness of what is matched.
-- **Description:** The NVD CPE and CVE APIs rate-limit anonymous clients (~5 requests / 30 s). A scan assessing many distinct products issues a request per product (deduped via the CLI's `vuln_cache`), so a large estate can be throttled, slowing assessment or dropping enrichment for some services.
-- **Reproduction:** Run `scan --assess-vulns` against a subnet with many distinct detected products and observe pacing/HTTP 403s from the NVD API.
-- **Notes:** Mitigated today by per-product caching. Candidate improvement tracked as [IMP-002](IMPROVEMENTS.md) (support an `NVD_API_KEY` for the higher rate limit, plus backoff/retry on 403/429). Consistent with D-009 (NVD queried on demand).
+- **Notes:** Inherent to CPE applicability matching without a version — not a coding defect; deliberately stays deferred (it can't be eliminated without version data). **Now surfaced** by [IMP-003](IMPROVEMENTS.md) (applied): version-less findings are flagged "product-wide" in the risk view, so the over-reporting is visible and discountable rather than silently inflating the count.
 
 ### BUG-005: IPv6 OS fingerprinting has no TTL/hop-limit signal
 

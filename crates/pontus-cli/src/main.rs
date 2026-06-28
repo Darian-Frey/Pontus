@@ -685,7 +685,10 @@ fn print_risk(store: &Store, scan_id: i64) -> Result<(), Box<dyn std::error::Err
         let top_desc = host
             .vulns
             .first()
-            .map(|v| format!("{} [{}]", v.cve_id, v.band))
+            .map(|v| {
+                let scope = if v.version_matched { "" } else { " (product-wide)" };
+                format!("{} [{}]{}", v.cve_id, v.band, scope)
+            })
             .unwrap_or_default();
         println!(
             "  {:>7.1}  {} {:<20} {:<16} {:>3} vuln(s)  top: {}",

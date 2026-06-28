@@ -26,28 +26,6 @@ candidate.
 
 ## Suggested
 
-### IMP-002: Support an NVD API key (and backoff) on the CVE-matching path
-
-- **Status:** suggested
-- **Found:** 2026-06-26, during F-015 development.
-- **Location:** [crates/pontus-core/src/intel.rs](../crates/pontus-core/src/intel.rs) — `resolve_cpe` / `fetch_nvd` / `http_get`.
-- **Effort:** small
-- **Description.** Anonymous NVD API access is rate-limited to ~5 requests / 30 s ([BUG-004](BUGS.md)), so assessing many distinct products throttles or drops enrichment. NVD grants a much higher limit to clients sending an `apiKey`.
-- **Proposal.** Read an `NVD_API_KEY` environment variable; when set, send it as the `apiKey` header on CPE/CVE requests. Add bounded exponential backoff with retry on HTTP 403/429 regardless of key.
-- **Trade-offs.** Adds a configuration knob and key-management surface (documenting where to obtain a key); the key is optional, so the default offline-friendly posture (D-009) is unchanged. Backoff lengthens worst-case scan time but prevents outright enrichment loss.
-- **Notes.** Directly mitigates [BUG-004](BUGS.md). Consistent with D-009 (NVD queried on demand).
-
-### IMP-003: Surface match confidence for version-less CVE findings
-
-- **Status:** suggested
-- **Found:** 2026-06-26, while fixing BUG-001.
-- **Location:** [crates/pontus-core/src/intel.rs](../crates/pontus-core/src/intel.rs), [crates/pontus-core/src/store.rs](../crates/pontus-core/src/store.rs) (`risk_ranked`), and the GUI risk view.
-- **Effort:** medium
-- **Description.** When a service is detected without a version, CPE matching is product-wide and over-reports ([BUG-002](BUGS.md)). The risk view currently presents these the same as version-accurate findings, diluting the "fix-this-first" signal.
-- **Proposal.** Record whether a match was version-constrained, carry a confidence flag through `risk_ranked`/`pontus_risk_json`, and mark version-less findings in the CLI and GUI (e.g. a "product-wide" badge), optionally de-weighting them in the score.
-- **Trade-offs.** Adds a confidence dimension to the vuln data model and the FFI/GUI surface; de-weighting risks hiding a genuinely exploited product if tuned too aggressively, so the first cut should mark, not suppress.
-- **Notes.** Addresses [BUG-002](BUGS.md). Depends on no other work.
-
 ### IMP-005: Use the TCP window (and consider an active probe) to refine OS family
 
 - **Status:** suggested
@@ -93,6 +71,28 @@ candidate.
 - **Notes.** The remaining half of [IMP-010](#imp-010-fold-web-tech-fingerprinting-into-scans); mirrors the `OsCorpus` design.
 
 ## Applied
+
+### IMP-002: Support an NVD API key (and backoff) on the CVE-matching path
+
+- **Status:** applied (2026-06-28)
+- **Found:** 2026-06-26, during F-015 development.
+- **Location:** [crates/pontus-core/src/intel.rs](../crates/pontus-core/src/intel.rs) — `http_get`.
+- **Effort:** small
+- **Description.** Anonymous NVD access is rate-limited (~5 requests / 30 s), so assessing many products throttled or dropped enrichment ([BUG-004](BUGS.md)).
+- **Proposal.** Send an `NVD_API_KEY` (from the environment) as the `apiKey` header on NVD requests, and retry HTTP 403/429/503 with exponential backoff (1/2/4/8 s, up to 4 attempts); also add a 20 s per-request timeout so a slow feed can't hang a scan.
+- **Trade-offs.** The key is optional, so the offline-friendly default (D-009) is unchanged; backoff lengthens a throttled scan but stops it failing outright.
+- **Notes.** Fixes [BUG-004](BUGS.md). Pure-Rust (`ureq`), no new dependency.
+
+### IMP-003: Surface match confidence for version-less CVE findings
+
+- **Status:** applied (2026-06-28)
+- **Found:** 2026-06-26, while fixing BUG-001.
+- **Location:** [crates/pontus-core/src/intel.rs](../crates/pontus-core/src/intel.rs) (`Vuln`/`assess`), [crates/pontus-core/src/store.rs](../crates/pontus-core/src/store.rs) (`vulns` column + `risk_ranked`), the risk view (CLI + GUI).
+- **Effort:** medium
+- **Description.** A version-less detection yields a product-wide CPE match (every CVE for the product), over-reporting ([BUG-002](BUGS.md)); these were shown identically to version-accurate findings.
+- **Proposal.** Carry a `version_matched` flag from `assess` through a new `vulns.version_matched` column (idempotent migration) and `risk_ranked`/`pontus_risk_json` to the views: a "Match: exact / product-wide" column in the GUI risk table (amber + tooltip for product-wide) and a "(product-wide)" marker on the CLI's top finding. Mark, not suppress.
+- **Trade-offs.** Adds a column to the vuln model and a view column; deliberately does not de-weight the score (the first cut marks, so a genuinely-exploited product isn't hidden).
+- **Notes.** Surfaces (does not eliminate) [BUG-002](BUGS.md) — product-wide matching is inherent without a version. Tests `risk_ranked_carries_version_matched_flag`.
 
 ### IMP-016: Distinguish UDP open|filtered from confirmed-open in the heatmap
 

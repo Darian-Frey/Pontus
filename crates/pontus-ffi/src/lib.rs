@@ -253,6 +253,7 @@ mod tests {
             cvss: Some(5.9),
             epss: Some(0.42),
             kev: true,
+            version_matched: true,
         };
         store.record_vuln(s1, 1, 22, &vuln).unwrap();
     }

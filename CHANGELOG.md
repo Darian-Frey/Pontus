@@ -65,6 +65,8 @@ are complete and Phase 3 (Intelligence) is in progress; everything below is on
 
 ### Changed
 
+- Vulnerability assessment sends an optional `NVD_API_KEY` (raising NVD's rate limit) and retries throttling (HTTP 403/429/503) with exponential backoff, plus a per-request timeout — so large `--assess-vulns` scans complete instead of dropping enrichment (IMP-002, fixes BUG-004).
+- The risk view marks version-less CVE matches as "product-wide" (vs "exact") — a new `vulns.version_matched` flag carried through `risk_ranked`/`pontus_risk_json` to a Match column in the GUI (amber + tooltip) and a "(product-wide)" marker in the CLI — so the inherent over-reporting of version-less matching is visible rather than silently inflating counts (IMP-003, surfaces BUG-002).
 - The scan diff keys on `(proto, port)` (`PortRef`), so `tcp/53` and `udp/53` are distinct findings.
 - The stateless SYN sweep was rebuilt around `BatchSender` with set-based reply matching to scale to wide ranges.
 - `--ports` (and `--udp-ports`) now accept ranges and mixed specs — `80,443,8000-8100`, `1-1024`, `-` for all of 1–65535 — de-duplicated and sorted; plus a `--top-ports <N>` preset over a curated clean-room common-ports list, unioned with `--ports`. Broad scanning is now a one-liner instead of a hand-typed list (F-002, IMP-013).

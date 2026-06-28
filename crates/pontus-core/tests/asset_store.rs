@@ -85,8 +85,20 @@ fn risk_ranked_dedupes_a_cve_recorded_on_multiple_ports() {
     let a = store.record(&sig(Some("aa:bb:cc:dd:ee:ff"), "192.168.1.10"), s, &up()).unwrap();
 
     // The same CVE on 80 and 443 (e.g. a web server on both), plus a second CVE.
-    let shared = Vuln { cve_id: "CVE-2023-44487".into(), cvss: Some(7.5), epss: Some(1.0), kev: true };
-    let other = Vuln { cve_id: "CVE-2009-3555".into(), cvss: Some(9.8), epss: Some(0.8), kev: false };
+    let shared = Vuln {
+        cve_id: "CVE-2023-44487".into(),
+        cvss: Some(7.5),
+        epss: Some(1.0),
+        kev: true,
+        version_matched: true,
+    };
+    let other = Vuln {
+        cve_id: "CVE-2009-3555".into(),
+        cvss: Some(9.8),
+        epss: Some(0.8),
+        kev: false,
+        version_matched: true,
+    };
     store.record_vuln(s, a, 80, &shared).unwrap();
     store.record_vuln(s, a, 443, &shared).unwrap();
     store.record_vuln(s, a, 80, &other).unwrap();
@@ -100,4 +112,25 @@ fn risk_ranked_dedupes_a_cve_recorded_on_multiple_ports() {
     assert_eq!(host.vulns.iter().filter(|v| v.cve_id == "CVE-2023-44487").count(), 1);
     // KEV dominates, so the deduped KEV CVE remains the top finding.
     assert_eq!(host.vulns[0].cve_id, "CVE-2023-44487");
+}
+
+#[test]
+fn risk_ranked_carries_version_matched_flag() {
+    use pontus_core::Vuln;
+
+    let store = Store::open_in_memory().unwrap();
+    let s = store.begin_scan("n", "s", None).unwrap();
+    let a = store.record(&sig(Some("aa:bb:cc:dd:ee:ff"), "192.168.1.10"), s, &up()).unwrap();
+
+    // A product-wide (version-less) match and a precise one.
+    let wide = Vuln { cve_id: "CVE-2009-3555".into(), cvss: Some(9.8), epss: Some(0.9), kev: false, version_matched: false };
+    let exact = Vuln { cve_id: "CVE-2023-44487".into(), cvss: Some(7.5), epss: Some(1.0), kev: true, version_matched: true };
+    store.record_vuln(s, a, 80, &wide).unwrap();
+    store.record_vuln(s, a, 443, &exact).unwrap();
+    store.finish_scan(s).unwrap();
+
+    let host = &store.risk_ranked(s).unwrap()[0];
+    let find = |id: &str| host.vulns.iter().find(|v| v.cve_id == id).unwrap();
+    assert!(!find("CVE-2009-3555").version_matched, "version-less flagged");
+    assert!(find("CVE-2023-44487").version_matched, "precise flagged");
 }
