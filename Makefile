@@ -9,7 +9,10 @@ CLI  := target/release/pontus-cli
 GUI  := gui/build/pontus-gui
 DB   ?= pontus.db
 
-.PHONY: help build build-debug test clippy cap gui scan clean
+.PHONY: help build build-debug test clippy cap gui scan daemon clean
+
+DAEMON  := target/release/pontus-daemon
+DCONFIG ?= examples/pontus-daemon.toml
 
 help:
 	@echo "Pontus dev targets:"
@@ -20,6 +23,7 @@ help:
 	@echo "  make cap          build + grant CAP_NET_RAW to the release CLI (sudo only if missing)"
 	@echo "  make gui          build + cap + run the GUI (DB=$(DB)); GUI scans get raw privilege"
 	@echo "  make scan T=192.168.1.0/24 [S=<scope>] [P=22,80,443] [U=53,161,5353] [DB=<db>]"
+	@echo "  make daemon [DCONFIG=<config.toml>]   scheduled rescans (F-018); CLI gets raw privilege"
 	@echo "  make clean        remove build artefacts"
 
 build:
@@ -53,6 +57,12 @@ gui: cap
 scan: cap
 	@test -n "$(T)" || { echo "usage: make scan T=<targets> [S=<scope>] [P=<tcp-ports>] [U=<udp-ports>] [DB=<db>]"; exit 2; }
 	$(CLI) scan $(T) --scope $(or $(S),$(T)) --db $(DB) $(if $(P),--ports $(P)) $(if $(U),--udp-ports $(U))
+
+# Run the monitoring daemon (F-018). Depends on `cap` so the CLI it shells out to
+# for each scheduled scan holds CAP_NET_RAW rather than silently falling back to an
+# unprivileged probe.
+daemon: cap
+	$(DAEMON) --config $(DCONFIG)
 
 clean:
 	cargo clean

@@ -1,0 +1,37 @@
+# Example pontus-daemon configuration (F-018).
+#
+# Run with:  pontus-daemon --config examples/pontus-daemon.toml
+# Verify a config without waiting for intervals:  pontus-daemon --config … --once
+#
+# The daemon shells out to `pontus-cli scan` for each job (D-008), so the CLI it
+# invokes must hold CAP_NET_RAW (see `make cap`). Results are written to `db` as
+# ordinary append-only observations — drift, baselines and the risk view all see
+# them with no extra wiring.
+
+# Store every scan writes to.
+db = "pontus.db"
+# Path to the capability-granted CLI. A bare name is resolved on PATH.
+cli = "./target/release/pontus-cli"
+# Produce a baseline immediately on startup, then follow each job's interval.
+run_at_start = true
+
+# A frequent, shallow sweep of the LAN with vulnerability assessment.
+[[job]]
+name = "lan-hourly"
+targets = "192.168.1.0/24"
+interval = "1h"
+scope = ["192.168.1.0/24"]
+ports = "22,80,443,445,3389,8080"
+top_ports = 100
+assess_vulns = true
+operator = "daemon"
+
+# A daily, deeper pass including UDP and TLS/HTTP inspection.
+[[job]]
+name = "lan-daily-deep"
+targets = "192.168.1.0/24"
+interval = "1d"
+udp_ports = "53,123,161,5353"
+inspect = true
+assess_vulns = true
+operator = "daemon"
