@@ -67,8 +67,8 @@ RiskDialog::RiskDialog(PontusClient* client, QWidget* parent)
     connect(hosts_, &QTableWidget::itemSelectionChanged, this, &RiskDialog::onHostSelected);
 
     vulns_ = new QTableWidget;
-    vulns_->setColumnCount(5);
-    vulns_->setHorizontalHeaderLabels({"CVE", "Band", "CVSS", "EPSS", "KEV"});
+    vulns_->setColumnCount(6);
+    vulns_->setHorizontalHeaderLabels({"CVE", "Band", "CVSS", "EPSS", "KEV", "Match"});
     vulns_->verticalHeader()->setVisible(false);
     vulns_->horizontalHeader()->setStretchLastSection(true);
     vulns_->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -257,6 +257,18 @@ void RiskDialog::onHostSelected() {
         auto* kevItem = new QTableWidgetItem(kev ? QStringLiteral("● KEV") : QString());
         kevItem->setTextAlignment(Qt::AlignCenter);
 
+        // Version-less matches are product-wide (every CVE for the product) and so
+        // lower-confidence; mark them rather than suppress (IMP-003).
+        const bool versionMatched = vuln.value("version_matched").toBool();
+        auto* matchItem = new QTableWidgetItem(versionMatched ? QStringLiteral("exact")
+                                                              : QStringLiteral("product-wide"));
+        if (!versionMatched) {
+            matchItem->setForeground(bandColour(QStringLiteral("medium")));
+            matchItem->setToolTip(QStringLiteral(
+                "No version was detected, so this matches every CVE for the product — "
+                "likely over-reports."));
+        }
+
         if (colour.isValid()) {
             cveItem->setForeground(colour);
             bandItem->setForeground(colour);
@@ -269,6 +281,7 @@ void RiskDialog::onHostSelected() {
         vulns_->setItem(row, 2, cvssItem);
         vulns_->setItem(row, 3, epssItem);
         vulns_->setItem(row, 4, kevItem);
+        vulns_->setItem(row, 5, matchItem);
     }
     vulns_->resizeColumnsToContents();
     vulns_->horizontalHeader()->setStretchLastSection(true);

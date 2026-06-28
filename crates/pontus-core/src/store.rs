@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS vulns (
     cvss     REAL,
     epss     REAL,
     kev      INTEGER NOT NULL,
+    version_matched INTEGER NOT NULL DEFAULT 1,
     UNIQUE (scan_id, asset_id, port, cve_id)
 );
 
@@ -115,6 +116,8 @@ pub struct RankedVuln {
     pub kev: bool,
     pub band: String,
     pub score: f32,
+    /// `false` for a product-wide (version-less) match — lower confidence (IMP-003).
+    pub version_matched: bool,
 }
 
 /// A host ranked by vulnerability risk, with its vulnerabilities worst-first (F-015).
@@ -140,6 +143,7 @@ pub struct AssetVuln {
     pub cvss: Option<f32>,
     pub epss: Option<f32>,
     pub kev: bool,
+    pub version_matched: bool,
 }
 
 /// One observation in an asset's history, for the GUI detail pane.
@@ -197,6 +201,10 @@ impl Store {
 
     fn from_conn(conn: Connection) -> Result<Self> {
         conn.execute_batch(SCHEMA)?;
+        // Idempotent migration: add columns introduced after a store may have been
+        // created. SQLite has no ADD COLUMN IF NOT EXISTS, so a duplicate-column
+        // error just means it is already present (IMP-003).
+        let _ = conn.execute("ALTER TABLE vulns ADD COLUMN version_matched INTEGER NOT NULL DEFAULT 1", []);
         Ok(Self { conn })
     }
 
@@ -323,9 +331,19 @@ impl Store {
         vuln: &crate::intel::Vuln,
     ) -> Result<()> {
         self.conn.execute(
-            "INSERT OR IGNORE INTO vulns (scan_id, asset_id, port, cve_id, cvss, epss, kev)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![scan_id, asset_id, port, vuln.cve_id, vuln.cvss, vuln.epss, vuln.kev as i64],
+            "INSERT OR IGNORE INTO vulns
+                (scan_id, asset_id, port, cve_id, cvss, epss, kev, version_matched)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                scan_id,
+                asset_id,
+                port,
+                vuln.cve_id,
+                vuln.cvss,
+                vuln.epss,
+                vuln.kev as i64,
+                vuln.version_matched as i64
+            ],
         )?;
         Ok(())
     }
@@ -334,7 +352,7 @@ impl Store {
     pub fn vulns_for_scan(&self, scan_id: i64) -> Result<Vec<AssetVuln>> {
         let mut stmt = self.conn.prepare(
             "SELECT v.asset_id, a.identity_kind, a.identity_value, a.last_ip,
-                    v.port, v.cve_id, v.cvss, v.epss, v.kev
+                    v.port, v.cve_id, v.cvss, v.epss, v.kev, v.version_matched
              FROM vulns v JOIN assets a ON a.id = v.asset_id
              WHERE v.scan_id = ?1",
         )?;
@@ -349,6 +367,7 @@ impl Store {
                 cvss: r.get(6)?,
                 epss: r.get(7)?,
                 kev: r.get::<_, i64>(8)? != 0,
+                version_matched: r.get::<_, i64>(9)? != 0,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -364,7 +383,13 @@ impl Store {
         use crate::intel::{Vuln, band, risk_score};
         let mut by_asset: std::collections::HashMap<i64, HostRisk> = std::collections::HashMap::new();
         for av in self.vulns_for_scan(scan_id)? {
-            let v = Vuln { cve_id: av.cve_id.clone(), cvss: av.cvss, epss: av.epss, kev: av.kev };
+            let v = Vuln {
+                cve_id: av.cve_id.clone(),
+                cvss: av.cvss,
+                epss: av.epss,
+                kev: av.kev,
+                version_matched: av.version_matched,
+            };
             let ranked = RankedVuln {
                 band: band(&v).as_str().to_string(),
                 score: risk_score(&v),
@@ -372,6 +397,7 @@ impl Store {
                 cvss: av.cvss,
                 epss: av.epss,
                 kev: av.kev,
+                version_matched: av.version_matched,
             };
             by_asset
                 .entry(av.asset_id)

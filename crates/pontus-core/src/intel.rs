@@ -15,6 +15,7 @@
 
 use crate::error::{Error, Result};
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
 const KEV_URL: &str =
     "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json";
@@ -32,6 +33,10 @@ pub struct Vuln {
     pub epss: Option<f32>,
     /// Listed in the CISA Known Exploited Vulnerabilities catalogue.
     pub kev: bool,
+    /// `true` if matched against a specific product *version* (precise); `false`
+    /// if the product had no version, so the match is product-wide and likely
+    /// over-reports — a lower-confidence finding (IMP-003, BUG-002).
+    pub version_matched: bool,
 }
 
 /// Coarse triage band for display and sorting.
@@ -277,6 +282,9 @@ pub fn assess(product: &str, version: Option<&str>, kev: &KevCatalog) -> Result<
     }
     let ids: Vec<String> = cves.iter().map(|c| c.id.clone()).collect();
     let epss = fetch_epss(&ids).unwrap_or_default(); // best-effort enrichment
+    // A version-less match is product-wide (every CVE for the product) and thus
+    // lower-confidence; flag it so the risk view can mark it (IMP-003).
+    let version_matched = version.is_some_and(|v| !v.is_empty());
     Ok(cves
         .into_iter()
         .map(|c| Vuln {
@@ -284,6 +292,7 @@ pub fn assess(product: &str, version: Option<&str>, kev: &KevCatalog) -> Result<
             kev: kev.contains(&c.id),
             cvss: c.cvss,
             cve_id: c.id,
+            version_matched,
         })
         .collect())
 }
@@ -303,13 +312,32 @@ fn encode(s: &str) -> String {
 
 // ---- HTTP -----------------------------------------------------------------
 
-/// Minimal blocking GET used by the feed fetchers.
+/// Overall timeout per feed request, so a slow NVD doesn't hang a scan.
+const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
+/// How many times to ride out NVD throttling before giving up.
+const MAX_RETRIES: u32 = 4;
+
+/// Blocking GET used by the feed fetchers. For NVD it sends an `NVD_API_KEY` when
+/// one is set (raising the rate limit) and rides out throttling (HTTP 429/403/503)
+/// with exponential backoff, instead of failing the assessment (IMP-002, BUG-004).
 fn http_get(url: &str) -> Result<String> {
-    ureq::get(url)
-        .call()
-        .map_err(|e| Error::Feed(e.to_string()))?
-        .into_string()
-        .map_err(|e| Error::Feed(e.to_string()))
+    let api_key = url.contains("nvd.nist.gov").then(|| std::env::var("NVD_API_KEY").ok()).flatten();
+    let mut attempt = 0u32;
+    loop {
+        let mut req = ureq::get(url).timeout(HTTP_TIMEOUT);
+        if let Some(key) = &api_key {
+            req = req.set("apiKey", key);
+        }
+        match req.call() {
+            Ok(resp) => return resp.into_string().map_err(|e| Error::Feed(e.to_string())),
+            // Throttled or temporarily unavailable: back off (1s, 2s, 4s, 8s) and retry.
+            Err(ureq::Error::Status(code, _)) if matches!(code, 403 | 429 | 503) && attempt < MAX_RETRIES => {
+                attempt += 1;
+                std::thread::sleep(Duration::from_secs(1 << (attempt - 1)));
+            }
+            Err(e) => return Err(Error::Feed(e.to_string())),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -317,7 +345,7 @@ mod tests {
     use super::*;
 
     fn vuln(cvss: Option<f32>, epss: Option<f32>, kev: bool) -> Vuln {
-        Vuln { cve_id: "CVE-0000-0000".to_string(), cvss, epss, kev }
+        Vuln { cve_id: "CVE-0000-0000".to_string(), cvss, epss, kev, version_matched: true }
     }
 
     #[test]
