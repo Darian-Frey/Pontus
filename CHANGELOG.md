@@ -15,6 +15,10 @@ are complete and Phase 3 (Intelligence) is in progress; everything below is on
 
 ### Added
 
+#### Phase 4 — monitoring and plugins
+
+- `pontus-daemon`: unattended scheduled rescans (F-018). A TOML config of jobs (targets/scope/interval plus the scan options that map to `pontus-cli scan` flags) drives one timer per job; each run shells out to the capability-granted CLI (D-008) so results land as ordinary append-only observations against the resolved assets (D-007), feeding drift/baseline/risk with no extra wiring. Scans serialise through a single-writer lock; `run_at_start` produces a baseline immediately; `--once` runs every job a single time (config check / cron). New `make daemon` target and `examples/pontus-daemon.toml`.
+
 #### Cross-cutting
 
 - Local network configuration view (`netinfo` module): this machine's interfaces (IP/MAC/netmask) and listening ports, over FFI `pontus_local_config_json`, the `pontus-cli netinfo` command, and a GUI view (View ▸ Local network config, Ctrl+L). "Self" info, distinct from the asset model — interfaces via `pnet`, listening ports from `/proc/net` (F-036).

@@ -145,8 +145,8 @@ Cert chain, expiry, weak ciphers, SNI, certificate-transparency cross-reference.
 Wappalyzer-style stack identification from headers/markup. The `webtech` module identifies servers, languages, frameworks, CMSes, JS libraries, CDNs and analytics from response headers (`Server`, `X-Powered-By`, `Set-Cookie`, CDN markers), the `<meta generator>` tag and tell-tale paths/scripts — with versions where exposed. Clean-room signature set (C-001; not derived from Wappalyzer's dataset), reusing the existing `ureq` client, and extensible at runtime via a `--web-corpus <path>` JSON file layered over the built-in defaults (IMP-011, mirroring the OS corpus). `pontus-cli http <host>` reports it, scope-enforced. **Acceptance:** identifies server, framework and common front-end libraries on a reference site — met, live-verified (wordpress.org → nginx + WordPress 7.1; python.org → nginx + jQuery + Fastly).
 
 ### F-018 Monitoring daemon
-**Priority:** Should · **Status:** Not started
-`pontus-daemon` running scheduled rescans and persisting results. **Acceptance:** a scheduled rescan runs unattended and writes observations to the store.
+**Priority:** Should · **Status:** Done (core)
+`pontus-daemon` running scheduled rescans and persisting results. A TOML config of jobs (targets/scope/ports/interval + scan options) drives one timer per job; each run shells out to the capability-granted `pontus-cli scan` (D-008), so results land as ordinary append-only observations (D-007) and scans serialise through a single-writer lock. `--once` runs every job a single time (config check / cron use). **Acceptance:** a scheduled rescan runs unattended and writes observations to the store. ✅ (live: a daemon-driven loopback scan wrote a durable asset + observation).
 
 ### F-019 Alert rules & delivery
 **Priority:** Should · **Status:** Not started
