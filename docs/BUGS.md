@@ -103,6 +103,16 @@ _None._
 - **Reproduction:** Scan a `/24` with ~100 ports (≈25k SYN packets) fast enough to fill the qdisc; the sweep returns os error 105.
 - **Notes:** Fixed by classifying `ENOBUFS` as backpressure (`is_backpressure`) and pacing-then-retrying (200µs), dropping a single probe only after ~64 sustained retries so the sweep continues rather than failing. Unit test `enobufs_is_classified_as_backpressure`. The message said "discovery" because `ScanError` aliases `DiscoveryError`, so a SYN-sweep I/O error reuses the discovery wording — a clearer label would be a small follow-up.
 
+### BUG-012: One physical host could appear twice (IP-anchored + MAC-anchored)
+
+- **Status:** fixed (2026-06-28)
+- **Found:** 2026-06-28, on the reference /24 — hosts `.119` and `.169` each showed as two inventory rows with different OS guesses (one MAC-anchored, one IP-anchored).
+- **Location:** [crates/pontus-core/src/identity.rs](../crates/pontus-core/src/identity.rs) — `resolve`, the bare-IP fallback.
+- **Severity:** Medium — a duplicate asset double-counts a host and splits its observation history, undermining drift/baseline and the single-source-of-truth inventory (D-007). No data loss; both rows hold real observations.
+- **Description:** The bare-IP fallback only matched an asset that was _itself_ IP-anchored (`identity_kind = 'ip'`). So a host first seen via ARP (MAC-anchored) and later seen via ICMP only (ARP didn't fire that scan, so the sighting carried no MAC) failed to resolve to its existing asset and forked a second, IP-anchored one. ARP timing on intermittently-responsive devices (Cast/IoT) made this common.
+- **Reproduction:** Record a host with a MAC, then record the same IP with no MAC (`sig(None, ip)`) — before the fix, two assets; after, one (`icmp_only_sighting_after_arp_resolves_to_the_same_asset`).
+- **Notes:** Fixed by splitting the fallback (C-003-adjacent, so deliberately narrow). A **genuinely bare-IP** sighting (no MAC/host-key/hostname) now attaches to whichever asset already lives at that address, most-recent-first so a recycled lease resolves to its present tenant, regardless of anchor — IP remains a _locator_, never an _anchor_ (`merge` re-derives the anchor from the strongest stored field). A sighting that _does_ carry a stronger-but-unmatched signal (a new MAC) is still treated as a new host and may only _promote_ an existing IP-anchored asset, so recycled-address hosts stay distinct (`a_distinct_mac_at_a_known_ip_stays_its_own_asset`). **Prevention only:** existing duplicates cannot be merged retroactively — the append-only trigger (D-007) forbids re-pointing or deleting their observations — so they persist as historical artefacts and go stale once the fix routes new sightings to the canonical asset. Reversal condition in the code comment. Three new tests in `asset_store.rs`.
+
 ### BUG-004: NVD anonymous rate limiting can throttle or fail enrichment on large scans
 
 - **Status:** fixed (2026-06-28)
