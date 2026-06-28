@@ -33,7 +33,7 @@
 #include <QVBoxLayout>
 
 namespace {
-const QStringList kColumns = {"ID", "Anchor", "Identity", "Hostname", "Last IP", "OS", "Obs", "Last seen"};
+const QStringList kColumns = {"ID", "Anchor", "Identity", "Hostname", "Last IP", "MAC", "OS", "Obs", "Last seen"};
 
 // Render an observation's open ports as "proto/port" tokens.
 QString portsSummary(const QJsonObject& state) {
@@ -183,6 +183,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     // Right: detail pane — selected asset's observation history.
     detailHeader_ = new QLabel(QStringLiteral("Select an asset"));
     detailHeader_->setStyleSheet(QStringLiteral("font-weight: bold;"));
+    macLabel_ = new QLabel;
+    macLabel_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     history_ = new QTableWidget;
     history_->setColumnCount(6);
     history_->setHorizontalHeaderLabels({"Observed at", "Scan", "IP", "Up", "OS", "Open ports"});
@@ -200,6 +202,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     auto* rightBox = new QGroupBox(QStringLiteral("Asset detail"));
     auto* rightLayout = new QVBoxLayout(rightBox);
     rightLayout->addWidget(detailHeader_);
+    rightLayout->addWidget(macLabel_);
     rightLayout->addWidget(history_, 3);
     rightLayout->addWidget(new QLabel(QStringLiteral("Deep inspection (latest)")));
     rightLayout->addWidget(inspection_, 1);
@@ -322,6 +325,7 @@ void MainWindow::reload() {
     model_->removeRows(0, model_->rowCount());
     history_->setRowCount(0);
     detailHeader_->setText(QStringLiteral("Select an asset"));
+    macLabel_->clear();
 
     const QJsonArray assets = client_.assets();
     for (const QJsonValue& v : assets) {
@@ -332,6 +336,7 @@ void MainWindow::reload() {
         row << textItem(a.value("identity_value").toString());
         row << textItem(orDash(a.value("hostname")));
         row << textItem(orDash(a.value("last_ip")));
+        row << textItem(orDash(a.value("mac")));
         row << textItem(orDash(a.value("os")));
         row << numericItem(a.value("observations").toInt());
         row << textItem(a.value("last_seen").toString());
@@ -351,11 +356,14 @@ void MainWindow::onSelectionChanged() {
     const QModelIndex src = proxy_->mapToSource(rows.first());
     const long long id = model_->item(src.row(), 0)->data(Qt::DisplayRole).toLongLong();
     const QString identity = model_->item(src.row(), 2)->text();
-    showHistory(id, identity);
+    const QString mac = model_->item(src.row(), 5)->text();
+    showHistory(id, identity, mac);
 }
 
-void MainWindow::showHistory(long long assetId, const QString& identity) {
+void MainWindow::showHistory(long long assetId, const QString& identity, const QString& mac) {
     detailHeader_->setText(QStringLiteral("Asset %1 — %2").arg(assetId).arg(identity));
+    const bool haveMac = !mac.isEmpty() && mac != QStringLiteral("-");
+    macLabel_->setText(QStringLiteral("MAC: %1").arg(haveMac ? mac : QStringLiteral("— (no MAC learned)")));
     const QJsonArray history = client_.assetHistory(assetId);
     history_->setRowCount(history.size());
     for (int i = 0; i < history.size(); ++i) {

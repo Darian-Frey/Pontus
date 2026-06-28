@@ -179,6 +179,8 @@ pub struct AssetSummary {
     pub observations: i64,
     /// Most recent observation's OS guess, if any (F-013, surfaced in the GUI).
     pub os: Option<String>,
+    /// The asset's MAC, if one has ever been learned (None for IP-only hosts).
+    pub mac: Option<String>,
 }
 
 /// Handle to the Pontus store.
@@ -259,7 +261,8 @@ impl Store {
             "SELECT a.id, a.identity_kind, a.identity_value, a.hostname, a.last_ip, a.last_seen,
                     (SELECT COUNT(*) FROM observations o WHERE o.asset_id = a.id),
                     (SELECT json_extract(o.state, '$.os_guess') FROM observations o
-                     WHERE o.asset_id = a.id ORDER BY o.observed_at DESC, o.id DESC LIMIT 1)
+                     WHERE o.asset_id = a.id ORDER BY o.observed_at DESC, o.id DESC LIMIT 1),
+                    a.mac
              FROM assets a
              ORDER BY a.last_seen DESC, a.id ASC",
         )?;
@@ -273,6 +276,7 @@ impl Store {
                 last_seen: r.get(5)?,
                 observations: r.get(6)?,
                 os: r.get(7)?,
+                mac: r.get(8)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)

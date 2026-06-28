@@ -37,7 +37,7 @@ private slots:
 
 private:
     void reload();
-    void showHistory(long long assetId, const QString& identity);
+    void showHistory(long long assetId, const QString& identity, const QString& mac);
     // Locate a pontus-cli to drive scans (D-008): $PONTUS_CLI, then alongside the
     // GUI / the dev target dir, then PATH. Empty if none found.
     QString findPontusCli() const;
@@ -48,6 +48,7 @@ private:
     QTableView* table_ = nullptr;
     QLineEdit* filter_ = nullptr;
     QLabel* detailHeader_ = nullptr;
+    QLabel* macLabel_ = nullptr;
     QTableWidget* history_ = nullptr;
     QTextEdit* inspection_ = nullptr;
 };
