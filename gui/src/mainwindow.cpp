@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "diffdialog.h"
+#include "findingsdialog.h"
 #include "heatmapdialog.h"
 #include "netconfigdialog.h"
 #include "riskdialog.h"
@@ -148,6 +149,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     QAction* riskAct = viewMenu->addAction(QStringLiteral("&Risk / vulnerabilities…"));
     riskAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+R")));
     connect(riskAct, &QAction::triggered, this, &MainWindow::onRisk);
+    QAction* findingsAct = viewMenu->addAction(QStringLiteral("Plugin &findings…"));
+    findingsAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+F")));
+    connect(findingsAct, &QAction::triggered, this, &MainWindow::onFindings);
     QAction* netCfgAct = viewMenu->addAction(QStringLiteral("&Local network config…"));
     netCfgAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+L")));
     connect(netCfgAct, &QAction::triggered, this, &MainWindow::onNetConfig);
@@ -287,6 +291,15 @@ void MainWindow::onRisk() {
         return;
     }
     RiskDialog dialog(&client_, this);
+    dialog.exec();
+}
+
+void MainWindow::onFindings() {
+    if (!client_.isOpen()) {
+        statusBar()->showMessage(QStringLiteral("Open a database first."));
+        return;
+    }
+    FindingsDialog dialog(&client_, this);
     dialog.exec();
 }
 

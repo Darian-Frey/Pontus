@@ -76,6 +76,22 @@ ScanDialog::ScanDialog(QString cliPath, const QString& defaultDb, QWidget* paren
     dbLayout->addWidget(db_);
     dbLayout->addWidget(browse);
 
+    plugins_ = new QLineEdit;
+    plugins_->setPlaceholderText(QStringLiteral("optional — directory of plugins (.lua/.wasm/.wat/.py) to run"));
+    auto* browsePlugins = new QPushButton(QStringLiteral("Browse…"));
+    connect(browsePlugins, &QPushButton::clicked, this, [this] {
+        const QString dir = QFileDialog::getExistingDirectory(
+            this, QStringLiteral("Plugins directory"), plugins_->text());
+        if (!dir.isEmpty()) {
+            plugins_->setText(dir);
+        }
+    });
+    auto* pluginsRow = new QWidget;
+    auto* pluginsLayout = new QHBoxLayout(pluginsRow);
+    pluginsLayout->setContentsMargins(0, 0, 0, 0);
+    pluginsLayout->addWidget(plugins_);
+    pluginsLayout->addWidget(browsePlugins);
+
     operator_ = new QLineEdit;
     operator_->setPlaceholderText(QStringLiteral("optional — recorded in the audit log"));
     noRdns_ = new QCheckBox(QStringLiteral("Skip reverse-DNS"));
@@ -88,6 +104,7 @@ ScanDialog::ScanDialog(QString cliPath, const QString& defaultDb, QWidget* paren
     form->addRow(QStringLiteral("UDP ports"), udpPorts_);
     form->addRow(QStringLiteral("Detector"), detector_);
     form->addRow(QStringLiteral("Database"), dbRow);
+    form->addRow(QStringLiteral("Plugins"), pluginsRow);
     form->addRow(QStringLiteral("Operator"), operator_);
     form->addRow(QString(), assessVulns_);
     form->addRow(QString(), inspect_);
@@ -185,6 +202,10 @@ void ScanDialog::onRun() {
     if (noRdns_->isChecked()) {
         args << QStringLiteral("--no-rdns");
     }
+    const QString plugins = plugins_->text().trimmed();
+    if (!plugins.isEmpty()) {
+        args << QStringLiteral("--plugins") << plugins;
+    }
 
     output_->clear();
     output_->appendPlainText(QStringLiteral("$ %1 %2\n").arg(cliPath_, args.join(QLatin1Char(' '))));
@@ -225,6 +246,7 @@ void ScanDialog::setRunning(bool running) {
     assessVulns_->setEnabled(!running);
     inspect_->setEnabled(!running);
     db_->setEnabled(!running);
+    plugins_->setEnabled(!running);
     operator_->setEnabled(!running);
     noRdns_->setEnabled(!running);
     runBtn_->setText(running ? QStringLiteral("Scanning…") : QStringLiteral("Scan"));
@@ -257,6 +279,7 @@ void ScanDialog::onProfileSelected(int index) {
     detector_->setCurrentIndex(settings.value(QStringLiteral("detector")).toInt());
     assessVulns_->setChecked(settings.value(QStringLiteral("assess_vulns")).toBool());
     inspect_->setChecked(settings.value(QStringLiteral("inspect")).toBool());
+    plugins_->setText(settings.value(QStringLiteral("plugins")).toString());
     operator_->setText(settings.value(QStringLiteral("operator")).toString());
     noRdns_->setChecked(settings.value(QStringLiteral("no_rdns")).toBool());
     settings.endGroup();
@@ -282,6 +305,7 @@ void ScanDialog::onSaveProfile() {
     settings.setValue(QStringLiteral("detector"), detector_->currentIndex());
     settings.setValue(QStringLiteral("assess_vulns"), assessVulns_->isChecked());
     settings.setValue(QStringLiteral("inspect"), inspect_->isChecked());
+    settings.setValue(QStringLiteral("plugins"), plugins_->text());
     settings.setValue(QStringLiteral("operator"), operator_->text());
     settings.setValue(QStringLiteral("no_rdns"), noRdns_->isChecked());
     settings.endGroup();

@@ -47,6 +47,7 @@ private:
     QLineEdit* topPorts_ = nullptr;
     QLineEdit* udpPorts_ = nullptr;
     QLineEdit* db_ = nullptr;
+    QLineEdit* plugins_ = nullptr;
     QLineEdit* operator_ = nullptr;
     QComboBox* detector_ = nullptr;
     QCheckBox* assessVulns_ = nullptr;

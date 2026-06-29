@@ -186,4 +186,30 @@ mod tests {
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].severity, Severity::High);
     }
+
+    #[test]
+    fn first_party_cleartext_services_flags_http_and_telnet() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/plugins/cleartext-services.lua");
+        let plugin = Plugin::from_path("cleartext-services", Language::Lua, path);
+        // A typical host: HTTP open (low), Telnet open (high), HTTPS open (ignored).
+        let target = Target::new("192.168.1.1")
+            .with_port(80, "tcp")
+            .with_port(23, "tcp")
+            .with_port(443, "tcp");
+        let findings = host().run(&plugin, &target).unwrap();
+        assert_eq!(findings.len(), 2, "HTTP + Telnet flagged, HTTPS ignored");
+        assert!(findings.iter().any(|f| f.title.contains("Telnet") && f.severity == Severity::High));
+        assert!(findings.iter().any(|f| f.title.contains("HTTP") && f.severity == Severity::Low));
+    }
+
+    #[test]
+    fn first_party_exposed_discovery_flags_upnp_over_udp() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/plugins/exposed-discovery.lua");
+        let plugin = Plugin::from_path("exposed-discovery", Language::Lua, path);
+        let target = Target::new("192.168.1.1").with_port(1900, "udp").with_port(22, "tcp");
+        let findings = host().run(&plugin, &target).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].title.contains("UPnP"));
+        assert_eq!(findings[0].metadata.get("proto").map(String::as_str), Some("udp"));
+    }
 }

@@ -146,6 +146,17 @@ pub unsafe extern "C" fn pontus_risk_json(handle: *mut PontusHandle, scan_id: i6
     with_handle(handle, |h| serde_json::to_string(&h.store.risk_ranked(scan_id).ok()?).ok())
 }
 
+/// JSON array of plugin findings recorded by a scan (F-020):
+/// `[{"asset_id":…,"identity":…,"ip":…,"plugin":…,"title":…,"severity":…,
+/// "description":…,"metadata":{…}}, …]`.
+///
+/// # Safety
+/// `handle` must be a valid handle from [`pontus_open`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pontus_findings_json(handle: *mut PontusHandle, scan_id: i64) -> *mut c_char {
+    with_handle(handle, |h| serde_json::to_string(&h.store.findings_for_scan(scan_id).ok()?).ok())
+}
+
 /// Designate `scan_id` as the baseline this store diffs against (F-014). Returns
 /// true on success. This is a metadata write to the GUI's own store — distinct
 /// from scanning, which the GUI does by shelling out to the CLI (D-008).
@@ -256,6 +267,15 @@ mod tests {
             version_matched: true,
         };
         store.record_vuln(s1, 1, 22, &vuln).unwrap();
+        // A plugin finding on scan 1 for the findings view (F-020).
+        let finding = pontus_core::StoredFinding {
+            asset_id: 1,
+            plugin: "telnet".to_string(),
+            title: "Telnet exposed".to_string(),
+            severity: "high".to_string(),
+            ..Default::default()
+        };
+        store.record_finding(s1, &finding).unwrap();
     }
 
     fn read_and_free(ptr: *mut c_char) -> String {
@@ -301,6 +321,12 @@ mod tests {
                 "KEV vulnerability in risk JSON: {risk}");
         assert_eq!(read_and_free(unsafe { pontus_risk_json(handle, 2) }), "[]",
                    "scan with no vulns ranks empty");
+
+        let findings = read_and_free(unsafe { pontus_findings_json(handle, 1) });
+        assert!(findings.contains("Telnet exposed") && findings.contains("telnet"),
+                "plugin finding in JSON: {findings}");
+        assert_eq!(read_and_free(unsafe { pontus_findings_json(handle, 2) }), "[]",
+                   "scan with no findings is empty");
 
         // Baseline write/read round-trip (F-014).
         assert_eq!(unsafe { pontus_baseline(handle) }, -1, "no baseline initially");

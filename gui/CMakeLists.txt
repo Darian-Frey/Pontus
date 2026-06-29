@@ -34,6 +34,7 @@ add_executable(pontus-gui
     src/heatmapdialog.cpp
     src/netconfigdialog.cpp
     src/riskdialog.cpp
+    src/findingsdialog.cpp
     src/topologyview.cpp
     src/topologydialog.cpp
     src/pontusclient.cpp
