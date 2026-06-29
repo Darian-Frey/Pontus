@@ -5,8 +5,14 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+# Forward the Python plugin runner (links libpython, off by default).
+default = []
+python = ["pontus-plugins/python"]
+
 [dependencies]
 pontus-core = { path = "../pontus-core" }
+pontus-plugins = { path = "../pontus-plugins" }
 clap.workspace = true
 ipnet.workspace = true
 tokio.workspace = true

@@ -89,6 +89,23 @@ CREATE TABLE IF NOT EXISTS vulns (
 );
 
 CREATE INDEX IF NOT EXISTS idx_vulns_scan ON vulns(scan_id);
+
+-- Plugin findings for a host in a scan (F-020). Produced by the plugin host
+-- (pontus-plugins) and persisted here; the store does not depend on the plugin
+-- runtime — the CLI maps a plugin Finding onto these columns. metadata is a JSON
+-- object of string keys/values.
+CREATE TABLE IF NOT EXISTS findings (
+    id          INTEGER PRIMARY KEY,
+    scan_id     INTEGER NOT NULL REFERENCES scans(id),
+    asset_id    INTEGER NOT NULL REFERENCES assets(id),
+    plugin      TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    severity    TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    metadata    TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_findings_scan ON findings(scan_id);
 "#;
 
 /// A scan's audit record, for listing and diff headers.
@@ -144,6 +161,24 @@ pub struct AssetVuln {
     pub epss: Option<f32>,
     pub kev: bool,
     pub version_matched: bool,
+}
+
+/// A plugin finding persisted against an asset (F-020). On read it carries the
+/// asset's identity for display; on write `identity`/`ip` are ignored (the row is
+/// keyed by `asset_id`). The store layer is independent of the plugin runtime —
+/// the CLI maps a `pontus_plugins::Finding` onto this.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct StoredFinding {
+    pub asset_id: i64,
+    #[serde(default)]
+    pub identity: String,
+    #[serde(default)]
+    pub ip: Option<String>,
+    pub plugin: String,
+    pub title: String,
+    pub severity: String,
+    pub description: String,
+    pub metadata: std::collections::BTreeMap<String, String>,
 }
 
 /// One observation in an asset's history, for the GUI detail pane.
@@ -372,6 +407,53 @@ impl Store {
                 epss: r.get(7)?,
                 kev: r.get::<_, i64>(8)? != 0,
                 version_matched: r.get::<_, i64>(9)? != 0,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Record a plugin finding for a host in a scan (F-020). `metadata` is stored
+    /// as a JSON object. The store deliberately knows nothing about the plugin
+    /// runtime — the caller maps a plugin `Finding` onto these fields.
+    pub fn record_finding(&self, scan_id: i64, finding: &StoredFinding) -> Result<()> {
+        let metadata = serde_json::to_string(&finding.metadata).unwrap_or_else(|_| "{}".to_string());
+        self.conn.execute(
+            "INSERT INTO findings
+                (scan_id, asset_id, plugin, title, severity, description, metadata)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                scan_id,
+                finding.asset_id,
+                finding.plugin,
+                finding.title,
+                finding.severity,
+                finding.description,
+                metadata,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// All plugin findings recorded by a scan, joined to their asset identity.
+    pub fn findings_for_scan(&self, scan_id: i64) -> Result<Vec<StoredFinding>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT f.asset_id, a.identity_value, a.last_ip,
+                    f.plugin, f.title, f.severity, f.description, f.metadata
+             FROM findings f JOIN assets a ON a.id = f.asset_id
+             WHERE f.scan_id = ?1
+             ORDER BY f.plugin, f.id",
+        )?;
+        let rows = stmt.query_map([scan_id], |r| {
+            let metadata: String = r.get(7)?;
+            Ok(StoredFinding {
+                asset_id: r.get(0)?,
+                identity: r.get(1)?,
+                ip: r.get(2)?,
+                plugin: r.get(3)?,
+                title: r.get(4)?,
+                severity: r.get(5)?,
+                description: r.get(6)?,
+                metadata: serde_json::from_str(&metadata).unwrap_or_default(),
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)

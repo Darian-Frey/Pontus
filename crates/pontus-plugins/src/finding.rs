@@ -18,6 +18,25 @@ pub enum Severity {
     Critical,
 }
 
+impl Severity {
+    /// The lowercase wire/storage name, matching the serde representation.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Severity::Info => "info",
+            Severity::Low => "low",
+            Severity::Medium => "medium",
+            Severity::High => "high",
+            Severity::Critical => "critical",
+        }
+    }
+}
+
+impl std::fmt::Display for Severity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// One structured result produced by a plugin. `plugin` is stamped by the host
 /// (a plugin need not — and should not — name itself), so plugins typically return
 /// findings with just a title/severity/description and optional metadata.

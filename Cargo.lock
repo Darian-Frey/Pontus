@@ -1474,6 +1474,7 @@ dependencies = [
  "clap",
  "ipnet",
  "pontus-core",
+ "pontus-plugins",
  "tokio",
 ]
 
