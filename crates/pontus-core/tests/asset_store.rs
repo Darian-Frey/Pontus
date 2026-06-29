@@ -114,6 +114,41 @@ fn a_bare_ip_resolves_to_the_most_recent_tenant_of_that_address() {
 }
 
 #[test]
+fn plugin_findings_round_trip_with_asset_identity_and_metadata() {
+    use pontus_core::StoredFinding;
+    use std::collections::BTreeMap;
+
+    let store = Store::open_in_memory().unwrap();
+    let s = store.begin_scan("n", "s", None).unwrap();
+    let a = store.record(&sig(Some("aa:bb:cc:dd:ee:ff"), "192.168.1.10"), s, &up()).unwrap();
+
+    let mut metadata = BTreeMap::new();
+    metadata.insert("port".to_string(), "23".to_string());
+    let finding = StoredFinding {
+        asset_id: a,
+        plugin: "telnet".into(),
+        title: "Telnet exposed".into(),
+        severity: "high".into(),
+        description: "Port 23/tcp is open.".into(),
+        metadata,
+        ..Default::default()
+    };
+    store.record_finding(s, &finding).unwrap();
+    store.finish_scan(s).unwrap();
+
+    let got = store.findings_for_scan(s).unwrap();
+    assert_eq!(got.len(), 1);
+    let f = &got[0];
+    assert_eq!(f.asset_id, a);
+    assert_eq!(f.plugin, "telnet");
+    assert_eq!(f.severity, "high");
+    assert_eq!(f.metadata.get("port").map(String::as_str), Some("23"));
+    // The read joins the asset identity for display.
+    assert_eq!(f.identity, "aa:bb:cc:dd:ee:ff");
+    assert_eq!(f.ip.as_deref(), Some("192.168.1.10"));
+}
+
+#[test]
 fn observations_cannot_be_mutated_through_the_store_connection() {
     let store = Store::open_in_memory().unwrap();
     let s = store.begin_scan("n", "s", None).unwrap();

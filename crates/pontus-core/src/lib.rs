@@ -45,7 +45,7 @@ pub use tls::{CertInfo, Finding, ProtocolVersion, TlsReport, inspect};
 pub use webtech::{Category, Tech, WebCorpus, WebFingerprint};
 pub use store::{
     AssetObservation, AssetSummary, AssetVuln, Edge, HostObservation, HostRisk, RankedVuln,
-    ScanRef, Store,
+    ScanRef, StoredFinding, Store,
 };
 
 #[cfg(test)]

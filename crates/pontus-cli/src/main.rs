@@ -11,9 +11,11 @@ use pontus_core::scan::{HostPorts, OpenPort, ScanConfig, scan_hosts};
 use pontus_core::traceroute;
 use pontus_core::{
     Detector, IdentitySignals, KevCatalog, NativeDetector, NmapDetector, ObservationState,
-    PortObservation, PortProbe, Scope, Store, Vuln,
+    PortObservation, PortProbe, Scope, Store, StoredFinding, Vuln,
 };
+use pontus_plugins::{Language, Plugin, PluginHost};
 use std::collections::HashMap;
+use std::path::Path;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::process::ExitCode;
 use std::time::Duration;
@@ -41,6 +43,14 @@ enum Command {
     },
     /// Show hosts ranked by vulnerability risk (fix-first order) for a scan.
     Risk {
+        #[arg(long, default_value = "pontus.db")]
+        db: String,
+        /// Scan id (defaults to the most recent).
+        #[arg(long)]
+        scan: Option<i64>,
+    },
+    /// List plugin findings recorded by a scan (F-020).
+    Findings {
         #[arg(long, default_value = "pontus.db")]
         db: String,
         /// Scan id (defaults to the most recent).
@@ -225,6 +235,11 @@ struct ScanArgs {
     /// UDP probe retries (UDP is lossy; a retry cuts false open|filtered).
     #[arg(long, default_value_t = 1)]
     udp_retries: u8,
+    /// Directory of plugins to run against each scanned host (F-020). Files are
+    /// dispatched by extension: `.lua`, `.wasm`/`.wat`, and `.py` (the last needs
+    /// a `--features python` build). Findings are recorded against the asset.
+    #[arg(long, value_name = "DIR")]
+    plugins: Option<String>,
 }
 
 #[tokio::main]
@@ -235,6 +250,7 @@ async fn main() -> ExitCode {
         Command::Assets { db } => list_assets(&db),
         Command::Intel { command } => run_intel(command),
         Command::Risk { db, scan } => run_risk(&db, scan),
+        Command::Findings { db, scan } => run_findings(&db, scan),
         Command::Diff { db, from, to, all } => run_diff(&db, from, to, all),
         Command::Tls(args) => run_tls(args),
         Command::Http(args) => run_http(args),
@@ -348,6 +364,17 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
     // cached KEV catalogue and dedupe CVE lookups by (product, version) per scan.
     let kev = if args.assess_vulns { load_kev_cache() } else { KevCatalog::default() };
     let mut vuln_cache: HashMap<(String, Option<String>), Vec<Vuln>> = HashMap::new();
+
+    // Load plugins (F-020). Built once; run against each up host below. An empty
+    // set (no --plugins) skips the whole pass.
+    let plugin_host = build_plugin_host();
+    let plugins = match &args.plugins {
+        Some(dir) => load_plugins(dir),
+        None => Vec::new(),
+    };
+    if !plugins.is_empty() {
+        println!("plugins: {} loaded from {}", plugins.len(), args.plugins.as_deref().unwrap_or(""));
+    }
 
     let mut up = 0u64;
     let mut os_guessed = 0u64;
@@ -491,6 +518,26 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
                 // CVE found via both the detector and web-tech is stored once.
                 for v in vulns.iter() {
                     store.record_vuln(scan_id, asset_id, port, v)?;
+                }
+            }
+        }
+
+        // Plugin pass (F-020): build a target from this host's observation and run
+        // every loaded plugin, persisting findings against the asset. A plugin error
+        // is reported but never aborts the scan.
+        if !plugins.is_empty() {
+            let target = build_target(host, hostname.as_deref(), &state.open_ports);
+            for plugin in &plugins {
+                match plugin_host.run(plugin, &target) {
+                    Ok(findings) => {
+                        for f in &findings {
+                            store.record_finding(scan_id, &to_stored(f, asset_id))?;
+                        }
+                        for f in &findings {
+                            println!("      plugin {}: [{}] {}", plugin.name, f.severity, f.title);
+                        }
+                    }
+                    Err(e) => eprintln!("note: plugin {} on {}: {e}", plugin.name, host.ip),
                 }
             }
         }
@@ -683,6 +730,33 @@ fn run_risk(db: &str, scan: Option<i64>) -> Result<(), Box<dyn std::error::Error
             .ok_or("no scans in the store")?,
     };
     print_risk(&store, scan_id)?;
+    Ok(())
+}
+
+/// List plugin findings recorded by a scan (F-020).
+fn run_findings(db: &str, scan: Option<i64>) -> Result<(), Box<dyn std::error::Error>> {
+    let store = Store::open(db)?;
+    let scan_id = match scan {
+        Some(id) => id,
+        None => store
+            .recent_scans(1)?
+            .first()
+            .map(|s| s.id)
+            .ok_or("no scans in the store")?,
+    };
+    let findings = store.findings_for_scan(scan_id)?;
+    if findings.is_empty() {
+        println!("findings: none recorded for scan {scan_id}");
+        return Ok(());
+    }
+    println!("findings for scan {scan_id}:");
+    for f in &findings {
+        let host = f.ip.as_deref().unwrap_or(&f.identity);
+        println!("  [{:^8}] {:<24} {} — {}", f.severity, host, f.plugin, f.title);
+        if !f.description.is_empty() {
+            println!("             {}", f.description);
+        }
+    }
     Ok(())
 }
 
@@ -1119,6 +1193,83 @@ const TOP_PORTS: &[u16] = &[
     27017, 9200, 11211, 32400,
 ];
 
+/// Build the plugin host with every runner available in this build (F-020, D-003).
+/// The Python runner is present only in a `--features python` build.
+fn build_plugin_host() -> PluginHost {
+    let mut host = PluginHost::new();
+    host.register(Box::new(pontus_plugins::LuaRunner::new()));
+    host.register(Box::new(pontus_plugins::WasmRunner::new()));
+    #[cfg(feature = "python")]
+    host.register(Box::new(pontus_plugins::PythonRunner::new()));
+    host
+}
+
+/// Map a plugin file's extension to its language. `None` for unknown extensions.
+fn plugin_language(path: &Path) -> Option<Language> {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("lua") => Some(Language::Lua),
+        Some("wasm") | Some("wat") => Some(Language::Wasm),
+        Some("py") => Some(Language::Python),
+        _ => None,
+    }
+}
+
+/// Load every recognised plugin file from `dir` (non-recursive). Unknown
+/// extensions are skipped; a `.py` plugin in a non-`python` build is skipped with
+/// a note. The plugin name is the file stem.
+fn load_plugins(dir: &str) -> Vec<Plugin> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("note: --plugins {dir}: {e}");
+            return Vec::new();
+        }
+    };
+    let mut plugins = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(language) = plugin_language(&path) else { continue };
+        if language == Language::Python && !cfg!(feature = "python") {
+            eprintln!("note: skipping {} — Python plugins need a --features python build", path.display());
+            continue;
+        }
+        let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("plugin").to_string();
+        plugins.push(Plugin::from_path(name, language, path));
+    }
+    plugins.sort_by(|a, b| a.name.cmp(&b.name));
+    plugins
+}
+
+/// Build a plugin `Target` from a scanned host's observation.
+fn build_target(host: &DiscoveredHost, hostname: Option<&str>, ports: &[PortObservation]) -> pontus_plugins::Target {
+    pontus_plugins::Target {
+        ip: host.ip.to_string(),
+        hostname: hostname.map(str::to_string),
+        ports: ports
+            .iter()
+            .map(|p| pontus_plugins::TargetPort {
+                port: p.port,
+                proto: p.proto.clone(),
+                service: p.service.clone(),
+                version: p.version.clone(),
+            })
+            .collect(),
+    }
+}
+
+/// Map a plugin finding onto the store's persisted shape, keyed to an asset.
+fn to_stored(f: &pontus_plugins::Finding, asset_id: i64) -> StoredFinding {
+    StoredFinding {
+        asset_id,
+        plugin: f.plugin.clone(),
+        title: f.title.clone(),
+        severity: f.severity.as_str().to_string(),
+        description: f.description.clone(),
+        metadata: f.metadata.clone(),
+        ..Default::default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1126,6 +1277,16 @@ mod tests {
     #[test]
     fn parses_single_ports_sorted_and_deduped() {
         assert_eq!(parse_ports("443,80,80").unwrap(), vec![80, 443]);
+    }
+
+    #[test]
+    fn plugin_language_maps_known_extensions() {
+        assert_eq!(plugin_language(Path::new("p.lua")), Some(Language::Lua));
+        assert_eq!(plugin_language(Path::new("p.wasm")), Some(Language::Wasm));
+        assert_eq!(plugin_language(Path::new("p.wat")), Some(Language::Wasm));
+        assert_eq!(plugin_language(Path::new("p.py")), Some(Language::Python));
+        assert_eq!(plugin_language(Path::new("README.md")), None);
+        assert_eq!(plugin_language(Path::new("noext")), None);
     }
 
     #[test]
