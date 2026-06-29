@@ -1,0 +1,15 @@
+[package]
+name = "pontus-plugins"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# The plugin host (D-003, F-020). The stable Finding/Target API is serde-driven so
+# every runner — Lua now, WASM and Python later — exchanges the same shape across
+# whatever boundary it has. mlua's `serialize` feature converts those serde types
+# to/from Lua values directly, so there is no hand-written table marshalling.
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+mlua = { workspace = true }
