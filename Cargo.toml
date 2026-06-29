@@ -32,3 +32,4 @@ ureq = "2"
 x509-parser = "0.16"
 toml = "0.8"
 mlua = { version = "0.10", features = ["lua54", "vendored", "serialize"] }
+wasmtime = "26"

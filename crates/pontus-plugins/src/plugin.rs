@@ -54,11 +54,22 @@ impl Plugin {
         Plugin { name: name.into(), language, source: PluginSource::Path(path.into()) }
     }
 
-    /// The plugin's source code, reading the file if needed.
+    /// The plugin's source code as text (Lua, or WAT). Reads the file if needed.
     pub fn code(&self) -> Result<Cow<'_, str>, PluginError> {
         match &self.source {
             PluginSource::Inline(s) => Ok(Cow::Borrowed(s.as_str())),
             PluginSource::Path(p) => std::fs::read_to_string(p)
+                .map(Cow::Owned)
+                .map_err(|e| PluginError::Load(format!("{}: {e}", p.display()))),
+        }
+    }
+
+    /// The plugin's raw bytes — for binary formats (a `.wasm` module). Inline
+    /// sources yield their UTF-8 bytes (so inline WAT text works too).
+    pub fn bytes(&self) -> Result<Cow<'_, [u8]>, PluginError> {
+        match &self.source {
+            PluginSource::Inline(s) => Ok(Cow::Borrowed(s.as_bytes())),
+            PluginSource::Path(p) => std::fs::read(p)
                 .map(Cow::Owned)
                 .map_err(|e| PluginError::Load(format!("{}: {e}", p.display()))),
         }
