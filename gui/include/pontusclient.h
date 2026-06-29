@@ -29,6 +29,7 @@ public:
     QJsonArray topology(long long scanId);
     QJsonArray risk(long long scanId);
     QJsonArray observations(long long scanId);
+    QJsonArray findings(long long scanId);
     // The local machine's network configuration; needs no open store.
     QJsonObject localConfig();
 

@@ -54,6 +54,10 @@ char *pontus_risk_json(PontusHandle *handle, long long scan_id);
 /* JSON array of one scan's host observations (identity, IP, state). Caller frees. */
 char *pontus_observations_json(PontusHandle *handle, long long scan_id);
 
+/* JSON array of one scan's plugin findings (identity, plugin, severity, title,
+ * description, metadata). Caller frees. */
+char *pontus_findings_json(PontusHandle *handle, long long scan_id);
+
 /* JSON of the local machine's network configuration (interfaces + listening
  * ports). Needs no handle — it queries the host Pontus runs on. Caller frees. */
 char *pontus_local_config_json(void);
