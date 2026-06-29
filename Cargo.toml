@@ -5,6 +5,7 @@ members = [
     "crates/pontus-cli",
     "crates/pontus-ffi",
     "crates/pontus-daemon",
+    "crates/pontus-plugins",
 ]
 
 [workspace.package]
@@ -30,3 +31,4 @@ roxmltree = "0.20"
 ureq = "2"
 x509-parser = "0.16"
 toml = "0.8"
+mlua = { version = "0.10", features = ["lua54", "vendored", "serialize"] }
