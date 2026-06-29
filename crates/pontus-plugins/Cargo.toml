@@ -4,13 +4,21 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+# The Python (pyo3) runner is opt-in: it links libpython, so building it needs
+# Python dev headers and running its plugins needs an interpreter. Default builds
+# stay Python-free (Lua + WASM only). Enable with `--features python`.
+default = []
+python = ["dep:pyo3"]
+
 [dependencies]
 # The plugin host (D-003, F-020). The stable Finding/Target API is serde-driven so
-# every runner — Lua now, WASM and Python later — exchanges the same shape across
-# whatever boundary it has. mlua's `serialize` feature converts those serde types
-# to/from Lua values directly, so there is no hand-written table marshalling.
+# every runner — Lua, WASM, Python — exchanges the same shape across whatever
+# boundary it has. mlua's `serialize` feature converts those serde types to/from
+# Lua values directly; the WASM and Python runners use JSON as the interchange.
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 mlua = { workspace = true }
 wasmtime = { workspace = true }
+pyo3 = { workspace = true, optional = true }

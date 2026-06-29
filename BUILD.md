@@ -56,6 +56,29 @@ cmake --build gui/build
 For a debug GUI build, omit `-DPONTUS_TARGET_DIR` (it defaults to `target/debug`)
 and `cargo build` (debug) instead.
 
+## Optional Python plugin runner (`python` feature)
+
+The plugin host (`pontus-plugins`) ships three runners (F-020, D-003). The Lua and
+WASM runners are always built and need nothing extra. The **Python** runner (pyo3)
+is **opt-in**, because it links `libpython`: building it needs Python dev headers
+and running its plugins needs an interpreter present.
+
+```bash
+# Build/test only the Lua + WASM runners (default — no Python needed):
+cargo test -p pontus-plugins
+
+# Enable the Python runner too:
+cargo test -p pontus-plugins --features python
+```
+
+pyo3 builds against the Python found on `PATH` (override with `PYO3_PYTHON`). With
+a non-system interpreter (e.g. conda) the resulting binary may not find
+`libpython` at run time; put its lib dir on the loader path:
+
+```bash
+export LD_LIBRARY_PATH="$(python3 -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))'):$LD_LIBRARY_PATH"
+```
+
 ## Capabilities (raw sockets)
 
 Raw-socket discovery, the SYN sweep and traceroute need `CAP_NET_RAW`. Grant it to
