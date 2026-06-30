@@ -214,6 +214,8 @@ enum ExportFormat {
     Sarif,
     /// CSV inventory (one row per host).
     Csv,
+    /// Self-contained HTML report.
+    Html,
 }
 
 /// Which service detector to run over scan results.
@@ -873,6 +875,7 @@ fn run_export(
         ExportFormat::Json => pontus_core::export::to_json(&report),
         ExportFormat::Sarif => pontus_core::export::to_sarif(&report),
         ExportFormat::Csv => pontus_core::export::to_csv(&report),
+        ExportFormat::Html => pontus_core::export::to_html(&report),
     };
     match output {
         Some(path) => {
