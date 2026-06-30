@@ -58,6 +58,11 @@ char *pontus_observations_json(PontusHandle *handle, long long scan_id);
  * description, metadata). Caller frees. */
 char *pontus_findings_json(PontusHandle *handle, long long scan_id);
 
+/* Render a scan as a report in `format` ("html", "json", "sarif" or "csv").
+ * Returns the document text, or NULL on a bad handle/format/unknown scan.
+ * Caller frees. */
+char *pontus_export(PontusHandle *handle, long long scan_id, const char *format);
+
 /* JSON of the local machine's network configuration (interfaces + listening
  * ports). Needs no handle — it queries the host Pontus runs on. Caller frees. */
 char *pontus_local_config_json(void);

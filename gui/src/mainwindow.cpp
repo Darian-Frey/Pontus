@@ -11,6 +11,7 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QStandardPaths>
@@ -126,6 +127,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     QAction* refreshAct = fileMenu->addAction(QStringLiteral("&Refresh"));
     refreshAct->setShortcut(QKeySequence::Refresh);
     connect(refreshAct, &QAction::triggered, this, &MainWindow::onRefresh);
+    QAction* exportAct = fileMenu->addAction(QStringLiteral("&Export latest scan…"));
+    exportAct->setShortcut(QKeySequence(QStringLiteral("Ctrl+E")));
+    connect(exportAct, &QAction::triggered, this, &MainWindow::onExport);
     fileMenu->addSeparator();
     QAction* quitAct = fileMenu->addAction(QStringLiteral("&Quit"));
     quitAct->setShortcut(QKeySequence::Quit);
@@ -301,6 +305,52 @@ void MainWindow::onFindings() {
     }
     FindingsDialog dialog(&client_, this);
     dialog.exec();
+}
+
+void MainWindow::onExport() {
+    if (!client_.isOpen()) {
+        statusBar()->showMessage(QStringLiteral("Open a database first."));
+        return;
+    }
+    const QJsonArray scans = client_.scans(1); // newest first
+    if (scans.isEmpty()) {
+        statusBar()->showMessage(QStringLiteral("No scans to export."));
+        return;
+    }
+    const long long scanId = scans.first().toObject().value("id").toInt();
+
+    QString selectedFilter;
+    const QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("Export latest scan (#%1)").arg(scanId),
+        QStringLiteral("pontus-report.html"),
+        QStringLiteral("HTML report (*.html);;JSON (*.json);;SARIF 2.1 (*.sarif);;CSV (*.csv)"),
+        &selectedFilter);
+    if (path.isEmpty()) {
+        return; // cancelled
+    }
+    // Format from the chosen filter (falls back to HTML).
+    QString format = QStringLiteral("html");
+    if (selectedFilter.startsWith(QLatin1String("JSON"))) {
+        format = QStringLiteral("json");
+    } else if (selectedFilter.startsWith(QLatin1String("SARIF"))) {
+        format = QStringLiteral("sarif");
+    } else if (selectedFilter.startsWith(QLatin1String("CSV"))) {
+        format = QStringLiteral("csv");
+    }
+
+    const QString text = client_.exportScan(scanId, format);
+    if (text.isEmpty()) {
+        statusBar()->showMessage(QStringLiteral("Export failed."));
+        return;
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        statusBar()->showMessage(QStringLiteral("Could not write %1").arg(path));
+        return;
+    }
+    file.write(text.toUtf8());
+    file.close();
+    statusBar()->showMessage(QStringLiteral("Exported scan %1 to %2").arg(scanId).arg(path));
 }
 
 void MainWindow::onNetConfig() {

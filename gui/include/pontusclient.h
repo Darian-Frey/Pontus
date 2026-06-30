@@ -30,6 +30,8 @@ public:
     QJsonArray risk(long long scanId);
     QJsonArray observations(long long scanId);
     QJsonArray findings(long long scanId);
+    // Render a scan as a report ("html"/"json"/"sarif"/"csv"); empty on failure.
+    QString exportScan(long long scanId, const QString& format);
     // The local machine's network configuration; needs no open store.
     QJsonObject localConfig();
 

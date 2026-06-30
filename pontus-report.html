@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pontus scan report — scan 42</title>
+<style>
+:root{--bg:#0f1115;--fg:#e6e6e6;--mut:#9aa0a6;--card:#1a1d23;--line:#2a2e36;
+--crit:#c0392b;--high:#e06a0a;--med:#d4a017;--low:#6b7280}
+*{box-sizing:border-box}body{margin:0;padding:2rem;background:var(--bg);color:var(--fg);
+font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif}
+h1{font-size:1.5rem;margin:0 0 .25rem}h2{margin:2rem 0 .5rem;border-bottom:1px solid var(--line);padding-bottom:.25rem}
+h3{margin:.2rem 0}.meta{color:var(--mut);margin:.25rem 0 1rem}code{background:var(--card);padding:.05rem .3rem;border-radius:3px}
+a{color:#6cb6ff;text-decoration:none}a:hover{text-decoration:underline}
+.cards{display:flex;gap:1rem;flex-wrap:wrap;margin:1rem 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:.75rem 1.25rem;min-width:6rem}
+.card .n{font-size:1.6rem;font-weight:600}.card .l{color:var(--mut);font-size:.8rem;text-transform:uppercase;letter-spacing:.05em}
+table{border-collapse:collapse;width:100%;margin:.5rem 0}th,td{text-align:left;padding:.4rem .6rem;border-bottom:1px solid var(--line)}
+th{color:var(--mut);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+.host{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:1rem 1.25rem;margin:1rem 0}
+.host .sub{color:var(--mut);font-size:.85rem;font-weight:400}
+.b-critical td:first-child a,.b-critical td:nth-child(2){color:var(--crit);font-weight:600}
+.b-high td:first-child a,.b-high td:nth-child(2){color:var(--high);font-weight:600}
+.b-medium td:first-child a,.b-medium td:nth-child(2){color:var(--med)}
+.findings{list-style:none;padding:0}.findings li{padding:.4rem 0;border-bottom:1px solid var(--line)}
+.badge{display:inline-block;min-width:4.5rem;text-align:center;padding:.05rem .4rem;border-radius:4px;font-size:.75rem;text-transform:uppercase;background:var(--low);color:#fff}
+.sev-critical .badge{background:var(--crit)}.sev-high .badge{background:var(--high)}.sev-medium .badge{background:var(--med)}
+.plugin{color:var(--mut);font-size:.8rem}.desc{color:var(--mut);font-size:.85rem;margin-top:.15rem}
+</style>
+</head>
+<body>
+<h1>Pontus scan report</h1>
+<p class="meta">Scan #42 · targets <code>192.168.1.0/24</code> · started 2026-06-30T22:42:04.168194372+00:00 → 2026-06-30T22:43:39.929407386+00:00 · pontus v0.1.0</p>
+<div class="cards">
+<div class="card"><div class="n">7</div><div class="l">Hosts</div></div>
+<div class="card"><div class="n">7</div><div class="l">Up</div></div>
+<div class="card"><div class="n">48</div><div class="l">Vulnerabilities</div></div>
+<div class="card"><div class="n">1</div><div class="l">KEV</div></div>
+<div class="card"><div class="n">14</div><div class="l">Findings</div></div>
+</div>
+<h2>Inventory</h2>
+<table><thead><tr><th>Host</th><th>Identity</th><th>OS</th><th>Ports</th><th>Vulns</th><th>Findings</th></tr></thead><tbody>
+<tr><td><a href="#h1">192.168.1.1</a></td><td>mac 08:c7:f5:ad:97:3c</td><td>Linux/Unix</td><td>10</td><td>48</td><td>8</td></tr>
+<tr><td><a href="#h2">192.168.1.65</a></td><td>mac 2c:1b:3a:a6:b0:d6</td><td>Linux/Unix</td><td>2</td><td>0</td><td>2</td></tr>
+<tr><td><a href="#h3">192.168.1.48</a></td><td>mac 40:a9:cf:2d:52:3c</td><td>Linux/Unix</td><td>5</td><td>0</td><td>1</td></tr>
+<tr><td><a href="#h4">192.168.1.200</a></td><td>mac 2c:71:ff:cf:8b:24</td><td>Linux/Unix</td><td>5</td><td>0</td><td>1</td></tr>
+<tr><td><a href="#h5">192.168.1.23</a></td><td>mac 46:51:06:32:20:a2</td><td>Linux/Unix</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td><a href="#h6">192.168.1.141</a></td><td>mac a0:59:50:e0:7a:ae</td><td>Linux/Unix</td><td>1</td><td>0</td><td>1</td></tr>
+<tr><td><a href="#h7">192.168.1.147</a></td><td>mac 1c:fe:2b:74:b3:96</td><td>Linux/Unix</td><td>2</td><td>0</td><td>1</td></tr>
+</tbody></table>
+<h2>Hosts</h2>
+<section class="host" id="h1">
+<h3>192.168.1.1 <span class="sub">mac 08:c7:f5:ad:97:3c · up · OS Linux/Unix</span></h3>
+<p class="ports"><strong>Open ports:</strong> <code>tcp/53</code> <code>tcp/80 http</code> <code>tcp/443 https</code> <code>tcp/631</code> <code>tcp/8080 http</code> <code>tcp/49152</code> <code>udp/53 dns: 7...........version.bind</code> <code>udp/123 ntp: %.O.......3..............8.o.....8./</code> <code>udp/1900 ssdp: HTTP/1.1 200 OK..CACHE-CONTROL: max-age=1801..DATE: Tue, 30 Jun 2026 22:42:08 GMT..EXT:..LOCATION: http://192.168.1.1:49152/wps_device.xml..SERVER: Unspecified, UPnP/1.0, Unspecified..ST: upnp:rootdevice..USN: uuid:2d93a583-c719-df29-05e7-87ffaf75fa8b::upnp:rootdevice</code> <code>udp/5353 open|filtered</code></p>
+<table class="vulns"><thead><tr><th>CVE</th><th>Band</th><th>CVSS</th><th>EPSS</th><th>KEV</th><th>Match</th></tr></thead><tbody>
+<tr class="b-critical"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2023-44487">CVE-2023-44487</a></td><td>critical</td><td>7.5</td><td>100.0%</td><td>● KEV</td><td>product-wide</td></tr>
+<tr class="b-high"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2009-3555">CVE-2009-3555</a></td><td>high</td><td>9.8</td><td>87.3%</td><td></td><td>product-wide</td></tr>
+<tr class="b-high"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2013-2028">CVE-2013-2028</a></td><td>high</td><td>7.5</td><td>87.5%</td><td></td><td>product-wide</td></tr>
+<tr class="b-high"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2019-9513">CVE-2019-9513</a></td><td>high</td><td>7.5</td><td>82.0%</td><td></td><td>product-wide</td></tr>
+<tr class="b-high"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2016-0742">CVE-2016-0742</a></td><td>high</td><td>7.5</td><td>82.0%</td><td></td><td>product-wide</td></tr>
+<tr class="b-high"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2010-2263">CVE-2010-2263</a></td><td>high</td><td>5.0</td><td>71.9%</td><td></td><td>product-wide</td></tr>
+<tr class="b-high"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2013-4547">CVE-2013-4547</a></td><td>high</td><td>7.5</td><td>67.7%</td><td></td><td>product-wide</td></tr>
+<tr class="b-high"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2009-2629">CVE-2009-2629</a></td><td>high</td><td>7.5</td><td>66.9%</td><td></td><td>product-wide</td></tr>
+<tr class="b-high"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2017-7529">CVE-2017-7529</a></td><td>high</td><td>7.5</td><td>62.6%</td><td></td><td>product-wide</td></tr>
+<tr class="b-high"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2019-9511">CVE-2019-9511</a></td><td>high</td><td>7.5</td><td>58.4%</td><td></td><td>product-wide</td></tr>
+<tr class="b-high"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2019-9516">CVE-2019-9516</a></td><td>high</td><td>6.5</td><td>56.3%</td><td></td><td>product-wide</td></tr>
+<tr class="b-high"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2021-23017">CVE-2021-23017</a></td><td>high</td><td>7.7</td><td>52.8%</td><td></td><td>product-wide</td></tr>
+<tr class="b-medium"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2018-16843">CVE-2018-16843</a></td><td>medium</td><td>7.5</td><td>47.1%</td><td></td><td>product-wide</td></tr>
+<tr class="b-medium"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2009-4487">CVE-2009-4487</a></td><td>medium</td><td>6.8</td><td>27.0%</td><td></td><td>product-wide</td></tr>
+<tr class="b-medium"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2010-2266">CVE-2010-2266</a></td><td>medium</td><td>5.0</td><td>21.5%</td><td></td><td>product-wide</td></tr>
+<tr class="b-medium"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2016-4450">CVE-2016-4450</a></td><td>medium</td><td>7.5</td><td>16.4%</td><td></td><td>product-wide</td></tr>
+<tr class="b-medium"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2019-8331">CVE-2019-8331</a></td><td>medium</td><td>6.1</td><td>16.9%</td><td></td><td>product-wide</td></tr>
+<tr class="b-medium"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2009-3898">CVE-2009-3898</a></td><td>medium</td><td>4.9</td><td>15.9%</td><td></td><td>product-wide</td></tr>
+<tr class="b-medium"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2019-20372">CVE-2019-20372</a></td><td>medium</td><td>5.3</td><td>15.0%</td><td></td><td>product-wide</td></tr>
+<tr class="b-medium"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2018-16844">CVE-2018-16844</a></td><td>medium</td><td>7.5</td><td>12.4%</td><td></td><td>product-wide</td></tr>
+<tr class="b-high"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2016-0746">CVE-2016-0746</a></td><td>high</td><td>9.8</td><td>8.6%</td><td></td><td>product-wide</td></tr>
+<tr class="b-medium"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2013-2070">CVE-2013-2070</a></td><td>medium</td><td>5.8</td><td>11.9%</td><td></td><td>product-wide</td></tr>
+<tr class="b-medium"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2014-0133">CVE-2014-0133</a></td><td>medium</td><td>7.5</td><td>9.3%</td><td></td><td>product-wide</td></tr>
+<tr class="b-low"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2012-2089">CVE-2012-2089</a></td><td>low</td><td>6.8</td><td>9.6%</td><td></td><td>product-wide</td></tr>
+<tr class="b-medium"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2014-0088">CVE-2014-0088</a></td><td>medium</td><td>7.5</td><td>8.7%</td><td></td><td>product-wide</td></tr>
+<tr class="b-low"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2018-16845">CVE-2018-16845</a></td><td>low</td><td>6.1</td><td>9.8%</td><td></td><td>product-wide</td></tr>
+<tr class="b-medium"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2012-1180">CVE-2012-1180</a></td><td>medium</td><td>5.0</td><td>10.4%</td><td></td><td>product-wide</td></tr>
+<tr class="b-medium"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2009-3896">CVE-2009-3896</a></td><td>medium</td><td>5.0</td><td>10.2%</td><td></td><td>product-wide</td></tr>
+<tr class="b-low"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2014-3556">CVE-2014-3556</a></td><td>low</td><td>6.8</td><td>7.8%</td><td></td><td>product-wide</td></tr>
+<tr class="b-low"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2010-4180">CVE-2010-4180</a></td><td>low</td><td>4.3</td><td>9.5%</td><td></td><td>product-wide</td></tr>
+<tr class="b-low"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2016-0747">CVE-2016-0747</a></td><td>low</td><td>5.3</td><td>8.4%</td><td></td><td>product-wide</td></tr>
+<tr class="b-high"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2017-20005">CVE-2017-20005</a></td><td>high</td><td>9.8</td><td>3.3%</td><td></td><td>product-wide</td></tr>
+<tr class="b-low"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2011-4315">CVE-2011-4315</a></td><td>low</td><td>6.8</td><td>6.1%</td><td></td><td>product-wide</td></tr>
+<tr class="b-medium"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2016-1247">CVE-2016-1247</a></td><td>medium</td><td>7.8</td><td>4.9%</td><td></td><td>product-wide</td></tr>
+<tr class="b-low"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2011-4963">CVE-2011-4963</a></td><td>low</td><td>5.0</td><td>6.0%</td><td></td><td>product-wide</td></tr>
+<tr class="b-low"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2018-14041">CVE-2018-14041</a></td><td>low</td><td>6.1</td><td>4.3%</td><td></td><td>product-wide</td></tr>
+<tr class="b-low"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2018-14040">CVE-2018-14040</a></td><td>low</td><td>6.1</td><td>4.1%</td><td></td><td>product-wide</td></tr>
+<tr class="b-low"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2016-10735">CVE-2016-10735</a></td><td>low</td><td>6.1</td><td>4.0%</td><td></td><td>product-wide</td></tr>
+<tr class="b-low"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2018-14042">CVE-2018-14042</a></td><td>low</td><td>6.1</td><td>4.0%</td><td></td><td>product-wide</td></tr>
+<tr class="b-low"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2018-20677">CVE-2018-20677</a></td><td>low</td><td>6.1</td><td>4.0%</td><td></td><td>product-wide</td></tr>
+<tr class="b-low"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2014-3616">CVE-2014-3616</a></td><td>low</td><td>4.3</td><td>5.7%</td><td></td><td>product-wide</td></tr>
+<tr class="b-low"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2018-20676">CVE-2018-20676</a></td><td>low</td><td>6.1</td><td>3.8%</td><td></td><td>product-wide</td></tr>
+<tr class="b-medium"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2021-3618">CVE-2021-3618</a></td><td>medium</td><td>7.4</td><td>2.0%</td><td></td><td>product-wide</td></tr>
+<tr class="b-medium"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2013-0337">CVE-2013-0337</a></td><td>medium</td><td>7.5</td><td>1.9%</td><td></td><td>product-wide</td></tr>
+<tr class="b-low"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2011-4968">CVE-2011-4968</a></td><td>low</td><td>4.8</td><td>4.0%</td><td></td><td>product-wide</td></tr>
+<tr class="b-medium"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2022-41742">CVE-2022-41742</a></td><td>medium</td><td>7.1</td><td>1.1%</td><td></td><td>product-wide</td></tr>
+<tr class="b-medium"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2022-41741">CVE-2022-41741</a></td><td>medium</td><td>7.0</td><td>0.8%</td><td></td><td>product-wide</td></tr>
+<tr class="b-low"><td><a href="https://nvd.nist.gov/vuln/detail/CVE-2025-23419">CVE-2025-23419</a></td><td>low</td><td>4.3</td><td>2.6%</td><td></td><td>product-wide</td></tr>
+</tbody></table>
+<ul class="findings">
+<li class="sev-low"><span class="badge">low</span> <strong>HTTP exposed (cleartext)</strong> <span class="plugin">cleartext-services</span><div class="desc">Port 80/tcp — unencrypted web traffic; prefer HTTPS</div></li>
+<li class="sev-low"><span class="badge">low</span> <strong>HTTP exposed (cleartext)</strong> <span class="plugin">cleartext-services</span><div class="desc">Port 8080/tcp — unencrypted web traffic (alt port); prefer HTTPS</div></li>
+<li class="sev-info"><span class="badge">info</span> <strong>IPP/CUPS reachable</strong> <span class="plugin">exposed-discovery</span><div class="desc">tcp/631 — printing service; can expose printer/admin endpoints</div></li>
+<li class="sev-low"><span class="badge">low</span> <strong>SSDP/UPnP reachable</strong> <span class="plugin">exposed-discovery</span><div class="desc">udp/1900 — UPnP control can expose port-forwarding and device control</div></li>
+<li class="sev-info"><span class="badge">info</span> <strong>mDNS reachable</strong> <span class="plugin">exposed-discovery</span><div class="desc">udp/5353 — multicast DNS advertises hostnames/services on the segment</div></li>
+<li class="sev-info"><span class="badge">info</span> <strong>Server header discloses software</strong> <span class="plugin">http-header-audit</span><div class="desc">Server: nginx</div></li>
+<li class="sev-low"><span class="badge">low</span> <strong>No Content-Security-Policy</strong> <span class="plugin">http-header-audit</span><div class="desc">No Content-Security-Policy header — weaker XSS/injection defences.</div></li>
+<li class="sev-info"><span class="badge">info</span> <strong>Server header discloses software</strong> <span class="plugin">http-header-audit</span><div class="desc">Server: nginx</div></li>
+</ul>
+</section>
+<section class="host" id="h2">
+<h3>192.168.1.65 <span class="sub">mac 2c:1b:3a:a6:b0:d6 · up · OS Linux/Unix</span></h3>
+<p class="ports"><strong>Open ports:</strong> <code>udp/1900 ssdp: HTTP/1.1 200 OK..Cache-Control: max-age=3600..ST: upnp:rootdevice..USN: uuid:280021c0-0000-1000-8006-2c1b3aa6b0d6::upnp:rootdevice..Ext: ..Server: Roku/15.2.4 UPnP/1.0 Roku/15.2.4..LOCATION: http://192.168.1.65:8060/..WAKEUP: MAC=2c:1b:3a:a6:b0:d6;Timeout=10</code> <code>udp/5353 mdns: _services._dns-sd._udp.local.................._display._tcp.#............._spotify-connect.C............._airplay.C</code></p>
+<ul class="findings">
+<li class="sev-low"><span class="badge">low</span> <strong>SSDP/UPnP reachable</strong> <span class="plugin">exposed-discovery</span><div class="desc">udp/1900 — UPnP control can expose port-forwarding and device control</div></li>
+<li class="sev-info"><span class="badge">info</span> <strong>mDNS reachable</strong> <span class="plugin">exposed-discovery</span><div class="desc">udp/5353 — multicast DNS advertises hostnames/services on the segment</div></li>
+</ul>
+</section>
+<section class="host" id="h3">
+<h3>192.168.1.48 <span class="sub">mac 40:a9:cf:2d:52:3c · up · OS Linux/Unix</span></h3>
+<p class="ports"><strong>Open ports:</strong> <code>tcp/8888</code> <code>udp/53 open|filtered</code> <code>udp/123 open|filtered</code> <code>udp/161 open|filtered</code> <code>udp/5353 open|filtered</code></p>
+<ul class="findings">
+<li class="sev-info"><span class="badge">info</span> <strong>mDNS reachable</strong> <span class="plugin">exposed-discovery</span><div class="desc">udp/5353 — multicast DNS advertises hostnames/services on the segment</div></li>
+</ul>
+</section>
+<section class="host" id="h4">
+<h3>192.168.1.200 <span class="sub">mac 2c:71:ff:cf:8b:24 · up · OS Linux/Unix</span></h3>
+<p class="ports"><strong>Open ports:</strong> <code>tcp/8888</code> <code>udp/53 open|filtered</code> <code>udp/123 open|filtered</code> <code>udp/161 open|filtered</code> <code>udp/5353 open|filtered</code></p>
+<ul class="findings">
+<li class="sev-info"><span class="badge">info</span> <strong>mDNS reachable</strong> <span class="plugin">exposed-discovery</span><div class="desc">udp/5353 — multicast DNS advertises hostnames/services on the segment</div></li>
+</ul>
+</section>
+<section class="host" id="h5">
+<h3>192.168.1.23 <span class="sub">mac 46:51:06:32:20:a2 · up · OS Linux/Unix</span></h3>
+</section>
+<section class="host" id="h6">
+<h3>192.168.1.141 <span class="sub">mac a0:59:50:e0:7a:ae · up · OS Linux/Unix</span></h3>
+<p class="ports"><strong>Open ports:</strong> <code>udp/5353 open|filtered</code></p>
+<ul class="findings">
+<li class="sev-info"><span class="badge">info</span> <strong>mDNS reachable</strong> <span class="plugin">exposed-discovery</span><div class="desc">udp/5353 — multicast DNS advertises hostnames/services on the segment</div></li>
+</ul>
+</section>
+<section class="host" id="h7">
+<h3>192.168.1.147 <span class="sub">mac 1c:fe:2b:74:b3:96 · up · OS Linux/Unix</span></h3>
+<p class="ports"><strong>Open ports:</strong> <code>tcp/8009</code> <code>udp/5353 open|filtered</code></p>
+<ul class="findings">
+<li class="sev-info"><span class="badge">info</span> <strong>mDNS reachable</strong> <span class="plugin">exposed-discovery</span><div class="desc">udp/5353 — multicast DNS advertises hostnames/services on the segment</div></li>
+</ul>
+</section>
+</body></html>
