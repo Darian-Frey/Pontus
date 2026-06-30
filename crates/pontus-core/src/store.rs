@@ -106,6 +106,18 @@ CREATE TABLE IF NOT EXISTS findings (
 );
 
 CREATE INDEX IF NOT EXISTS idx_findings_scan ON findings(scan_id);
+
+-- Installed packages gathered by a credentialed (SSH) scan (F-022): inventory
+-- depth for a host, keyed to the asset. One row per package per scan.
+CREATE TABLE IF NOT EXISTS packages (
+    scan_id  INTEGER NOT NULL REFERENCES scans(id),
+    asset_id INTEGER NOT NULL REFERENCES assets(id),
+    name     TEXT NOT NULL,
+    version  TEXT NOT NULL DEFAULT '',
+    UNIQUE (scan_id, asset_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_packages_scan ON packages(scan_id);
 "#;
 
 /// A scan's audit record, for listing and diff headers.
@@ -179,6 +191,19 @@ pub struct StoredFinding {
     pub severity: String,
     pub description: String,
     pub metadata: std::collections::BTreeMap<String, String>,
+}
+
+/// An installed package gathered by a credentialed scan (F-022). On read it
+/// carries the asset's identity for display; on write `identity`/`ip` are ignored.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct StoredPackage {
+    pub asset_id: i64,
+    #[serde(default)]
+    pub identity: String,
+    #[serde(default)]
+    pub ip: Option<String>,
+    pub name: String,
+    pub version: String,
 }
 
 /// One observation in an asset's history, for the GUI detail pane.
@@ -454,6 +479,37 @@ impl Store {
                 severity: r.get(5)?,
                 description: r.get(6)?,
                 metadata: serde_json::from_str(&metadata).unwrap_or_default(),
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Record an installed package gathered by a credentialed scan (F-022).
+    /// Idempotent on `(scan, asset, name)`.
+    pub fn record_package(&self, scan_id: i64, asset_id: i64, name: &str, version: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO packages (scan_id, asset_id, name, version)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![scan_id, asset_id, name, version],
+        )?;
+        Ok(())
+    }
+
+    /// All packages recorded by a scan, joined to their asset identity.
+    pub fn packages_for_scan(&self, scan_id: i64) -> Result<Vec<StoredPackage>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT p.asset_id, a.identity_value, a.last_ip, p.name, p.version
+             FROM packages p JOIN assets a ON a.id = p.asset_id
+             WHERE p.scan_id = ?1
+             ORDER BY a.id, p.name",
+        )?;
+        let rows = stmt.query_map([scan_id], |r| {
+            Ok(StoredPackage {
+                asset_id: r.get(0)?,
+                identity: r.get(1)?,
+                ip: r.get(2)?,
+                name: r.get(3)?,
+                version: r.get(4)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
