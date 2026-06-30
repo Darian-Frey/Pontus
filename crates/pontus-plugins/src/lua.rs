@@ -95,6 +95,15 @@ impl PluginRunner for LuaRunner {
                     Ok(t)
                 })?;
                 pontus.set("http_get", http_get)?;
+
+                let snmp_get = scope.create_function(
+                    |_lua, (host, community, oid): (String, String, String)| {
+                        // nil when there's no answer; an error only on misuse.
+                        caps.snmp_get(&host, &community, &oid).map_err(mlua::Error::external)
+                    },
+                )?;
+                pontus.set("snmp_get", snmp_get)?;
+
                 lua.globals().set("pontus", pontus)?;
 
                 let target_val = lua.to_value(target)?;
@@ -235,6 +244,10 @@ mod tests {
             headers.insert("server".to_string(), "nginx/1.18.0".to_string());
             Ok(HttpResponse { status: 200, headers, body: "hi".to_string() })
         }
+        fn snmp_get(&self, _host: &str, community: &str, _oid: &str) -> Result<Option<String>, CapError> {
+            // Only the "public" community "answers", to exercise nil handling.
+            Ok((community == "public").then(|| "Test Router v1".to_string()))
+        }
     }
 
     #[test]
@@ -261,6 +274,27 @@ mod tests {
     }
 
     #[test]
+    fn a_plugin_can_query_snmp_and_nil_is_handled() {
+        let mut h = PluginHost::new();
+        h.register(Box::new(LuaRunner::new()));
+        let plugin = Plugin::inline(
+            "snmp",
+            Language::Lua,
+            r#"function check(target)
+                 local out = {}
+                 local pub = pontus.snmp_get(target.ip, "public", "1.3.6.1.2.1.1.1.0")
+                 local prv = pontus.snmp_get(target.ip, "private", "1.3.6.1.2.1.1.1.0")
+                 if pub then out[#out+1] = { title = "SNMP public: " .. pub, severity = "medium" } end
+                 if prv then out[#out+1] = { title = "SNMP private", severity = "medium" } end
+                 return out
+               end"#,
+        );
+        let findings = h.run_with(&plugin, &Target::new("10.0.0.1"), &StubHttp).unwrap();
+        assert_eq!(findings.len(), 1, "only the public community answered (private → nil)");
+        assert!(findings[0].title.contains("Test Router v1"));
+    }
+
+    #[test]
     fn without_capabilities_http_get_errors() {
         // The default run() grants NoCapabilities, so a probing plugin fails rather
         // than reaching the network.
@@ -270,6 +304,25 @@ mod tests {
             r#"function check(t) pontus.http_get("http://10.0.0.1/"); return {} end"#,
         );
         assert!(host().run(&plugin, &Target::new("10.0.0.1")).is_err());
+    }
+
+    #[test]
+    fn first_party_snmp_info_probes_when_161_udp_is_open() {
+        let mut h = PluginHost::new();
+        h.register(Box::new(LuaRunner::new()));
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/plugins/snmp-info.lua");
+        let plugin = Plugin::from_path("snmp-info", Language::Lua, path);
+
+        // No 161/udp observed → the plugin does nothing (no wasted probes).
+        let quiet = h.run_with(&plugin, &Target::new("10.0.0.1").with_port(80, "tcp"), &StubHttp).unwrap();
+        assert!(quiet.is_empty());
+
+        // With 161/udp observed, the stub answers the "public" community.
+        let target = Target::new("10.0.0.1").with_port(161, "udp");
+        let findings = h.run_with(&plugin, &target, &StubHttp).unwrap();
+        assert!(!findings.is_empty());
+        assert_eq!(findings[0].severity, Severity::Medium);
+        assert!(findings[0].title.contains("community 'public'"));
     }
 
     #[test]

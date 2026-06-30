@@ -13,6 +13,7 @@ pub mod capability;
 pub mod finding;
 pub mod lua;
 pub mod plugin;
+mod snmp;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod wasm;
