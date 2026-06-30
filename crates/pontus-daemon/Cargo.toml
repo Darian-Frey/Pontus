@@ -23,3 +23,4 @@ chrono = { workspace = true }
 clap = { workspace = true }
 thiserror = { workspace = true }
 ureq = { workspace = true }
+lettre = { workspace = true }
