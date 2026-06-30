@@ -149,6 +149,26 @@ fn plugin_findings_round_trip_with_asset_identity_and_metadata() {
 }
 
 #[test]
+fn packages_round_trip_with_asset_identity_and_dedupe() {
+    let store = Store::open_in_memory().unwrap();
+    let s = store.begin_scan("n", "s", None).unwrap();
+    let a = store.record(&sig(Some("aa:bb:cc:dd:ee:ff"), "192.168.1.10"), s, &up()).unwrap();
+
+    store.record_package(s, a, "openssh-server", "1:8.9p1").unwrap();
+    store.record_package(s, a, "nginx", "1.18.0").unwrap();
+    // Idempotent on (scan, asset, name) — a re-record doesn't duplicate.
+    store.record_package(s, a, "nginx", "1.18.0").unwrap();
+    store.finish_scan(s).unwrap();
+
+    let pkgs = store.packages_for_scan(s).unwrap();
+    assert_eq!(pkgs.len(), 2, "nginx recorded once despite two inserts");
+    assert!(pkgs.iter().any(|p| p.name == "openssh-server" && p.version == "1:8.9p1"));
+    // The read joins the asset identity for display.
+    assert!(pkgs.iter().all(|p| p.identity == "aa:bb:cc:dd:ee:ff"));
+    assert!(pkgs.iter().all(|p| p.ip.as_deref() == Some("192.168.1.10")));
+}
+
+#[test]
 fn observations_cannot_be_mutated_through_the_store_connection() {
     let store = Store::open_in_memory().unwrap();
     let s = store.begin_scan("n", "s", None).unwrap();

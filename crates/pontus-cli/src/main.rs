@@ -57,6 +57,14 @@ enum Command {
         #[arg(long)]
         scan: Option<i64>,
     },
+    /// List installed packages gathered by a credentialed scan (F-022).
+    Packages {
+        #[arg(long, default_value = "pontus.db")]
+        db: String,
+        /// Scan id (defaults to the most recent).
+        #[arg(long)]
+        scan: Option<i64>,
+    },
     /// Manage cached vulnerability intelligence (CISA KEV, EPSS).
     Intel {
         #[command(subcommand)]
@@ -80,6 +88,9 @@ enum Command {
     Tls(TlsArgs),
     /// Identify the web technology stack of an HTTP(S) endpoint (F-017).
     Http(HttpArgs),
+    /// Gather installed-package inventory from a host over SSH with user-supplied
+    /// credentials (F-022). Scope-enforced; records packages against the asset.
+    SshInventory(SshInventoryArgs),
     /// Show this machine's own network configuration: interfaces and listening ports (F-036).
     Netinfo,
 }
@@ -117,6 +128,42 @@ struct TlsArgs {
     /// Per-probe connect/read timeout, milliseconds.
     #[arg(long, default_value_t = 4000)]
     timeout_ms: u64,
+}
+
+#[derive(Parser)]
+struct SshInventoryArgs {
+    /// Target host (IP or hostname) to log in to.
+    target: String,
+    /// SSH username (required). Credentials are always user-supplied (F-022).
+    #[arg(long)]
+    user: String,
+    /// Authorised scope (repeatable). Mandatory — nothing is contacted outside it
+    /// (F-007). Defaults to the target itself when omitted.
+    #[arg(long = "scope", value_name = "CIDR|IP")]
+    scope: Vec<String>,
+    /// SSH port.
+    #[arg(long, default_value_t = 22)]
+    port: u16,
+    /// Private key file for key auth (otherwise the agent / default keys are used).
+    #[arg(long, value_name = "PATH")]
+    key: Option<String>,
+    /// Use password auth, reading the password from the PONTUS_SSH_PASSWORD
+    /// environment variable (needs `sshpass`). Never pass passwords on the CLI.
+    #[arg(long)]
+    password: bool,
+    /// Require the host to already be in known_hosts (StrictHostKeyChecking=yes)
+    /// instead of trusting on first use (accept-new).
+    #[arg(long)]
+    strict_host_keys: bool,
+    /// Connect timeout, seconds.
+    #[arg(long, default_value_t = 10)]
+    connect_timeout_s: u64,
+    /// Store path.
+    #[arg(long, default_value = "pontus.db")]
+    db: String,
+    /// Operator name, recorded in the audit log.
+    #[arg(long)]
+    operator: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -251,9 +298,11 @@ async fn main() -> ExitCode {
         Command::Intel { command } => run_intel(command),
         Command::Risk { db, scan } => run_risk(&db, scan),
         Command::Findings { db, scan } => run_findings(&db, scan),
+        Command::Packages { db, scan } => run_packages(&db, scan),
         Command::Diff { db, from, to, all } => run_diff(&db, from, to, all),
         Command::Tls(args) => run_tls(args),
         Command::Http(args) => run_http(args),
+        Command::SshInventory(args) => run_ssh_inventory(args),
         Command::Netinfo => run_netinfo(),
     };
     match result {
@@ -760,6 +809,30 @@ fn run_findings(db: &str, scan: Option<i64>) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
+/// List installed packages gathered by a credentialed scan (F-022).
+fn run_packages(db: &str, scan: Option<i64>) -> Result<(), Box<dyn std::error::Error>> {
+    let store = Store::open(db)?;
+    let scan_id = match scan {
+        Some(id) => id,
+        None => store
+            .recent_scans(1)?
+            .first()
+            .map(|s| s.id)
+            .ok_or("no scans in the store")?,
+    };
+    let packages = store.packages_for_scan(scan_id)?;
+    if packages.is_empty() {
+        println!("packages: none recorded for scan {scan_id} (run `ssh-inventory`)");
+        return Ok(());
+    }
+    println!("packages for scan {scan_id}: {} total", packages.len());
+    for p in &packages {
+        let host = p.ip.as_deref().unwrap_or(&p.identity);
+        println!("  {:<24} {} {}", host, p.name, p.version);
+    }
+    Ok(())
+}
+
 /// Render hosts ranked by vulnerability risk (fix-first order, C-002).
 fn print_risk(store: &Store, scan_id: i64) -> Result<(), Box<dyn std::error::Error>> {
     let hosts = store.risk_ranked(scan_id)?;
@@ -836,6 +909,76 @@ fn run_tls(args: TlsArgs) -> Result<(), Box<dyn std::error::Error>> {
     println!("tls: {} ({}) port {}", args.target, addr.ip(), args.port);
     let report = pontus_core::tls::inspect(addr, &sni, Duration::from_millis(args.timeout_ms));
     print_tls_report(&report);
+    Ok(())
+}
+
+fn run_ssh_inventory(args: SshInventoryArgs) -> Result<(), Box<dyn std::error::Error>> {
+    use std::net::ToSocketAddrs;
+
+    let is_ip = args.target.parse::<IpAddr>().is_ok();
+    let addr = (args.target.as_str(), args.port)
+        .to_socket_addrs()?
+        .next()
+        .ok_or("could not resolve target")?;
+
+    // Scope enforcement (F-007): refuse before connecting. Defaults to the target.
+    let scope_specs: Vec<String> =
+        if args.scope.is_empty() { vec![addr.ip().to_string()] } else { args.scope.clone() };
+    let scope = Scope::parse(&scope_specs)?;
+    scope.ensure(addr.ip())?;
+
+    // Password (if requested) comes from the environment, never the command line.
+    let password = if args.password {
+        Some(std::env::var("PONTUS_SSH_PASSWORD").map_err(|_| {
+            "--password set but PONTUS_SSH_PASSWORD is not in the environment"
+        })?)
+    } else {
+        None
+    };
+
+    let opts = pontus_core::SshOptions {
+        user: args.user.clone(),
+        port: args.port,
+        identity_file: args.key.clone().map(std::path::PathBuf::from),
+        password,
+        connect_timeout: Duration::from_secs(args.connect_timeout_s.max(1)),
+        accept_new_host_keys: !args.strict_host_keys,
+    };
+
+    println!("ssh-inventory: {}@{} ({}) ...", args.user, args.target, addr.ip());
+    let inv = pontus_core::gather_ssh_inventory(&args.target, &opts)?;
+    println!(
+        "  os: {}   packages: {} ({})",
+        inv.os.as_deref().unwrap_or("(unknown)"),
+        inv.packages.len(),
+        inv.manager.as_deref().unwrap_or("no package manager"),
+    );
+
+    // Record against the asset: one observation (SSH up, OS from the host) plus the
+    // package inventory (F-022, D-007).
+    let store = Store::open(&args.db)?;
+    let scan_id = store.begin_scan(&args.target, &scope_specs.join(","), args.operator.as_deref())?;
+    let state = ObservationState {
+        up: true,
+        open_ports: vec![PortObservation {
+            port: args.port,
+            proto: "tcp".to_string(),
+            service: Some("ssh".to_string()),
+            ..Default::default()
+        }],
+        os_guess: inv.os.clone(),
+    };
+    let sig = IdentitySignals {
+        ip: Some(addr.ip()),
+        hostname: (!is_ip).then(|| args.target.clone()),
+        ..Default::default()
+    };
+    let asset_id = store.record(&sig, scan_id, &state)?;
+    for p in &inv.packages {
+        store.record_package(scan_id, asset_id, &p.name, &p.version)?;
+    }
+    store.finish_scan(scan_id)?;
+    println!("  recorded {} package(s) against asset {asset_id} (scan {scan_id})", inv.packages.len());
     Ok(())
 }
 
