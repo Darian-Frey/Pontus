@@ -15,6 +15,10 @@ are complete and Phase 3 (Intelligence) is in progress; everything below is on
 
 ### Added
 
+#### Phase 5 — reporting and ecosystem
+
+- Scan export (F-023): `pontus-cli export --format json|sarif|csv [--scan N] [-o PATH]`. JSON is the lossless, pipeline-friendly native output (the gap Nmap leaves); SARIF 2.1 maps each vulnerability and plugin finding to a result (host as location, risk/severity → error/warning/note, deduplicated rules) for CI / code-scanning dashboards; CSV is one row per host. Built in the `export` core module as a per-host projection of the existing store (observations + risk-ranked vulns + findings + packages). HTML/PDF reports are the next slice.
+
 #### Phase 4 — monitoring and plugins
 
 - Credentialed CVE matching (F-022 + F-015). `ssh-inventory --assess-vulns` (or `--assess-packages a,b,c`) matches installed package versions to CVEs via the intel layer — version-accurate from the *installed* version, not a network banner — and records them as host-level vulns that flow into `pontus-cli risk` and the GUI risk view. Distro versions are normalised (epoch/revision stripped, `1:8.9p1-3ubuntu0.10` → `8.9p1`) to match NVD's upstream versions. Bounded to a built-in set of common network-service products (or the explicit list) so a multi-thousand-package host doesn't flood the NVD API.

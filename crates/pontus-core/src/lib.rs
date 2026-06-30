@@ -11,6 +11,7 @@ pub mod cred;
 pub mod detect;
 pub mod diff;
 pub mod discovery;
+pub mod export;
 pub mod error;
 pub mod identity;
 pub mod intel;
