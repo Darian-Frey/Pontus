@@ -1,6 +1,7 @@
 //! Plugin description, the runner trait, and the host that dispatches a plugin to
 //! the runner for its language (D-003). One stable interface, many runtimes.
 
+use crate::capability::HostCapabilities;
 use crate::finding::{Finding, Target};
 use std::borrow::Cow;
 use std::path::PathBuf;
@@ -98,9 +99,16 @@ pub enum PluginError {
 pub trait PluginRunner: Send + Sync {
     /// The language this runner executes.
     fn language(&self) -> Language;
-    /// Run `plugin` against `target`, returning its findings. Implementations
-    /// should not stamp `Finding::plugin` — the host does that uniformly.
-    fn run(&self, plugin: &Plugin, target: &Target) -> Result<Vec<Finding>, PluginError>;
+    /// Run `plugin` against `target`, returning its findings. `caps` is the
+    /// host-mediated capability set the plugin may invoke (scope-enforced);
+    /// runners that don't expose capabilities ignore it. Implementations should
+    /// not stamp `Finding::plugin` — the host does that uniformly.
+    fn run(
+        &self,
+        plugin: &Plugin,
+        target: &Target,
+        caps: &dyn HostCapabilities,
+    ) -> Result<Vec<Finding>, PluginError>;
 }
 
 /// Holds the registered runners and dispatches plugins by language.
@@ -120,16 +128,26 @@ impl PluginHost {
         self
     }
 
-    /// Run a plugin against a target. Routes to the runner for the plugin's
-    /// language, then stamps each finding with the plugin's name.
+    /// Run a plugin against a target with no host capabilities (passive plugins).
     pub fn run(&self, plugin: &Plugin, target: &Target) -> Result<Vec<Finding>, PluginError> {
+        self.run_with(plugin, target, &crate::capability::NoCapabilities)
+    }
+
+    /// Run a plugin against a target, granting it `caps`. Routes to the runner for
+    /// the plugin's language, then stamps each finding with the plugin's name.
+    pub fn run_with(
+        &self,
+        plugin: &Plugin,
+        target: &Target,
+        caps: &dyn HostCapabilities,
+    ) -> Result<Vec<Finding>, PluginError> {
         let runner = self
             .runners
             .iter()
             .rev()
             .find(|r| r.language() == plugin.language)
             .ok_or(PluginError::UnsupportedLanguage(plugin.language))?;
-        let mut findings = runner.run(plugin, target)?;
+        let mut findings = runner.run(plugin, target, caps)?;
         for f in &mut findings {
             f.plugin = plugin.name.clone();
         }

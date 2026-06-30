@@ -29,12 +29,24 @@ Lua plugins define a global `check(target)`; Python plugins define a top-level
 `check(target)`; WASM plugins export `run` (see the crate docs). The runner stamps
 the producing plugin's name onto each finding.
 
+### Host capabilities (probing)
+
+A plugin can *actively probe* a service through host-mediated, **scope-enforced**
+capabilities — never raw network access (F-021, D-003). In Lua these live under the
+`pontus` table:
+
+- `pontus.http_get(url)` → `{ status, headers, body }` (header names lowercased).
+  The host refuses any URL whose host resolves outside the scan's scope, so a
+  plugin can only reach hosts already authorised for the scan. Wrap calls in
+  `pcall` so one unreachable endpoint doesn't abort the plugin.
+
 ## Included
 
 | File | Fires on | What it flags |
 |------|----------|---------------|
 | `cleartext-services.lua` | open TCP ports (HTTP, FTP, Telnet, POP3/IMAP, SNMP, LDAP, VNC, r-services) | services that carry data/credentials in the clear |
 | `exposed-discovery.lua` | UPnP/SSDP, mDNS, NetBIOS, WS-Discovery, IPP (mostly UDP — scan with `--udp-ports`) | discovery/IoT services reachable on the network |
+| `http-header-audit.lua` | open HTTP(S) ports (probes them via `pontus.http_get`) | missing security headers (HSTS, CSP, X-Content-Type-Options, clickjacking) and software disclosure |
 | `telnet.lua`, `telnet.py` | TCP/23 | minimal one-protocol examples of the API |
 
 All signatures are clean-room — derived from public well-known-port/protocol

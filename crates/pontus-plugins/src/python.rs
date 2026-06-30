@@ -36,7 +36,14 @@ impl PluginRunner for PythonRunner {
         Language::Python
     }
 
-    fn run(&self, plugin: &Plugin, target: &Target) -> Result<Vec<Finding>, PluginError> {
+    fn run(
+        &self,
+        plugin: &Plugin,
+        target: &Target,
+        _caps: &dyn crate::capability::HostCapabilities,
+    ) -> Result<Vec<Finding>, PluginError> {
+        // Python is the trusted, full-power tier and already has native network
+        // access, so host capabilities aren't injected here.
         let rt = |message: String| PluginError::Runtime { plugin: plugin.name.clone(), message };
         let conv =
             |message: String| PluginError::Conversion { plugin: plugin.name.clone(), message };
