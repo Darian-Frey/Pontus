@@ -7,9 +7,14 @@
 //! the host already authorised for the scan. [`NetCapabilities`] is the real
 //! implementation (scope predicate + `ureq`); [`NoCapabilities`] grants nothing.
 
+use crate::snmp;
 use std::collections::BTreeMap;
-use std::net::{IpAddr, ToSocketAddrs};
+use std::net::{IpAddr, ToSocketAddrs, UdpSocket};
 use std::time::Duration;
+
+/// Fixed SNMP request-id (the codec is single-shot; uniqueness across requests
+/// isn't needed for a one-off GET).
+const SNMP_REQUEST_ID: u32 = 0x70_6e_74_73; // "pnts"
 
 /// An HTTP response handed back to a plugin. Header names are lowercased so
 /// plugins can look them up case-insensitively.
@@ -39,6 +44,14 @@ pub trait HostCapabilities: Send + Sync {
     /// Fetch a URL over HTTP(S). The host resolves the destination and refuses
     /// anything outside the authorised scope before connecting.
     fn http_get(&self, url: &str) -> Result<HttpResponse, CapError>;
+
+    /// SNMP v2c GET of a single scalar OID from `host` (UDP 161) with `community`.
+    /// `Ok(Some(value))` on a value, `Ok(None)` when there is no answer (timeout,
+    /// closed, or an SNMP exception — i.e. "SNMP not readable here"), and `Err`
+    /// only for misuse (bad OID, out of scope). Default: unavailable.
+    fn snmp_get(&self, _host: &str, _community: &str, _oid: &str) -> Result<Option<String>, CapError> {
+        Err(CapError::Unavailable)
+    }
 }
 
 /// A capability set that grants nothing — the default for runs that don't pass
@@ -87,6 +100,31 @@ impl HostCapabilities for NetCapabilities {
         }
         let body = resp.into_string().unwrap_or_default();
         Ok(HttpResponse { status, headers, body })
+    }
+
+    fn snmp_get(&self, host: &str, community: &str, oid: &str) -> Result<Option<String>, CapError> {
+        let arcs = snmp::parse_oid(oid).ok_or_else(|| CapError::BadUrl(format!("oid {oid}")))?;
+        // Resolve and scope-check the destination (UDP 161) before sending (F-007).
+        let target = (host, 161u16)
+            .to_socket_addrs()
+            .map_err(|e| CapError::BadUrl(format!("{host}: {e}")))?
+            .find(|a| (self.allow)(a.ip()))
+            .ok_or_else(|| CapError::OutOfScope(host.to_string()))?;
+
+        // Local/transient socket errors and timeouts mean "no SNMP answer" (Ok(None)),
+        // not a hard error — a plugin probes many communities and most won't answer.
+        let bind = if target.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" };
+        let Ok(sock) = UdpSocket::bind(bind) else { return Ok(None) };
+        let _ = sock.set_read_timeout(Some(self.timeout));
+        let req = snmp::encode_get(community, SNMP_REQUEST_ID, &arcs);
+        if sock.send_to(&req, target).is_err() {
+            return Ok(None);
+        }
+        let mut buf = [0u8; 4096];
+        match sock.recv_from(&mut buf) {
+            Ok((n, _)) => Ok(snmp::parse_get_response(&buf[..n])),
+            Err(_) => Ok(None), // timeout → not SNMP-readable
+        }
     }
 }
 
@@ -140,5 +178,17 @@ mod tests {
         let caps = NetCapabilities::new(|_ip| false, Duration::from_millis(200));
         let err = caps.http_get("http://127.0.0.1:9/").unwrap_err();
         assert!(matches!(err, CapError::OutOfScope(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn out_of_scope_snmp_is_refused_and_bad_oid_errors() {
+        let caps = NetCapabilities::new(|_ip| false, Duration::from_millis(200));
+        assert!(matches!(
+            caps.snmp_get("127.0.0.1", "public", "1.3.6.1.2.1.1.1.0"),
+            Err(CapError::OutOfScope(_))
+        ));
+        // A malformed OID is misuse → BadUrl, regardless of scope.
+        let any = NetCapabilities::new(|_ip| true, Duration::from_millis(200));
+        assert!(matches!(any.snmp_get("127.0.0.1", "public", "not-an-oid"), Err(CapError::BadUrl(_))));
     }
 }

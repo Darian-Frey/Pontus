@@ -47,6 +47,7 @@ capabilities — never raw network access (F-021, D-003). In Lua these live unde
 | `cleartext-services.lua` | open TCP ports (HTTP, FTP, Telnet, POP3/IMAP, SNMP, LDAP, VNC, r-services) | services that carry data/credentials in the clear |
 | `exposed-discovery.lua` | UPnP/SSDP, mDNS, NetBIOS, WS-Discovery, IPP (mostly UDP — scan with `--udp-ports`) | discovery/IoT services reachable on the network |
 | `http-header-audit.lua` | open HTTP(S) ports (probes them via `pontus.http_get`) | missing security headers (HSTS, CSP, X-Content-Type-Options, clickjacking) and software disclosure |
+| `snmp-info.lua` | 161/udp (probes via `pontus.snmp_get`; scan with `--udp-ports 161`) | SNMP readable with a default community (`public`/`private`) and the system info it discloses |
 | `telnet.lua`, `telnet.py` | TCP/23 | minimal one-protocol examples of the API |
 
 All signatures are clean-room — derived from public well-known-port/protocol
