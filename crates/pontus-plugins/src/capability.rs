@@ -9,7 +9,9 @@
 
 use crate::snmp;
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::net::{IpAddr, ToSocketAddrs, UdpSocket};
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 /// Fixed SNMP request-id (the codec is single-shot; uniqueness across requests
@@ -36,6 +38,16 @@ pub enum CapError {
     BadUrl(String),
     #[error("http request failed: {0}")]
     Http(String),
+    #[error("required tool not available: {0}")]
+    Tool(String),
+}
+
+/// An SSH host key as reported by `ssh-keyscan` + `ssh-keygen -l`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SshHostKey {
+    pub algo: String,
+    pub bits: u32,
+    pub fingerprint: String,
 }
 
 /// Capabilities the host exposes to a plugin. Object-safe so a runner can hold a
@@ -50,6 +62,12 @@ pub trait HostCapabilities: Send + Sync {
     /// closed, or an SNMP exception — i.e. "SNMP not readable here"), and `Err`
     /// only for misuse (bad OID, out of scope). Default: unavailable.
     fn snmp_get(&self, _host: &str, _community: &str, _oid: &str) -> Result<Option<String>, CapError> {
+        Err(CapError::Unavailable)
+    }
+
+    /// Fetch a host's SSH host keys (algorithm, bit size, SHA-256 fingerprint) from
+    /// `host:port`. Default: unavailable.
+    fn ssh_hostkey(&self, _host: &str, _port: u16) -> Result<Vec<SshHostKey>, CapError> {
         Err(CapError::Unavailable)
     }
 }
@@ -126,6 +144,64 @@ impl HostCapabilities for NetCapabilities {
             Err(_) => Ok(None), // timeout → not SNMP-readable
         }
     }
+
+    fn ssh_hostkey(&self, host: &str, port: u16) -> Result<Vec<SshHostKey>, CapError> {
+        // Resolve and scope-check before connecting (F-007).
+        (host, port)
+            .to_socket_addrs()
+            .map_err(|e| CapError::BadUrl(format!("{host}: {e}")))?
+            .find(|a| (self.allow)(a.ip()))
+            .ok_or_else(|| CapError::OutOfScope(host.to_string()))?;
+
+        // Shell out to the user's own openssh tools (D-006): ssh-keyscan fetches the
+        // keys, ssh-keygen -l fingerprints them. No SSH/crypto dependency in-tree.
+        let secs = self.timeout.as_secs().max(1).to_string();
+        let scan = Command::new("ssh-keyscan")
+            .args(["-T", &secs, "-p", &port.to_string(), host])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+            .map_err(|_| CapError::Tool("ssh-keyscan".into()))?;
+        if scan.stdout.is_empty() {
+            return Ok(Vec::new()); // no keys offered / host unreachable
+        }
+
+        let mut child = Command::new("ssh-keygen")
+            .args(["-l", "-f", "-"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|_| CapError::Tool("ssh-keygen".into()))?;
+        // Drop stdin after writing so ssh-keygen sees EOF (output is small — no deadlock).
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(&scan.stdout);
+        }
+        let fp = child
+            .wait_with_output()
+            .map_err(|e| CapError::Tool(format!("ssh-keygen: {e}")))?;
+        Ok(String::from_utf8_lossy(&fp.stdout).lines().filter_map(parse_keygen_line).collect())
+    }
+}
+
+/// Parse one `ssh-keygen -l` line: `<bits> <SHA256:…> <comment…> (<TYPE>)`.
+fn parse_keygen_line(line: &str) -> Option<SshHostKey> {
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    // The first token must be the bit count and the last `(TYPE)` — this rejects
+    // ssh-keygen's `# host:port SSH-2.0-…` comment lines (no leading number).
+    let bits: u32 = parts[0].parse().ok()?;
+    let last = parts.last().unwrap();
+    if !(last.starts_with('(') && last.ends_with(')')) {
+        return None;
+    }
+    Some(SshHostKey {
+        bits,
+        algo: last.trim_matches(['(', ')']).to_string(),
+        fingerprint: parts[1].to_string(),
+    })
 }
 
 /// Extract `(host, port)` from a URL for the scope check. Handles `host`,
@@ -178,6 +254,18 @@ mod tests {
         let caps = NetCapabilities::new(|_ip| false, Duration::from_millis(200));
         let err = caps.http_get("http://127.0.0.1:9/").unwrap_err();
         assert!(matches!(err, CapError::OutOfScope(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn parses_ssh_keygen_lines() {
+        let ed = parse_keygen_line("256 SHA256:JNATBRyZ/E+abc host.example (ED25519)").unwrap();
+        assert_eq!(ed, SshHostKey { algo: "ED25519".into(), bits: 256, fingerprint: "SHA256:JNATBRyZ/E+abc".into() });
+        let rsa = parse_keygen_line("2048 SHA256:77ajKCbjbtq no comment (RSA)").unwrap();
+        assert_eq!(rsa.algo, "RSA");
+        assert_eq!(rsa.bits, 2048);
+        // ssh-keygen error/comment lines (no fingerprint) are skipped.
+        assert!(parse_keygen_line("# host.example:22 SSH-2.0-OpenSSH_9.6").is_none());
+        assert!(parse_keygen_line("").is_none());
     }
 
     #[test]

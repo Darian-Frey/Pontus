@@ -48,6 +48,7 @@ capabilities — never raw network access (F-021, D-003). In Lua these live unde
 | `exposed-discovery.lua` | UPnP/SSDP, mDNS, NetBIOS, WS-Discovery, IPP (mostly UDP — scan with `--udp-ports`) | discovery/IoT services reachable on the network |
 | `http-header-audit.lua` | open HTTP(S) ports (probes them via `pontus.http_get`) | missing security headers (HSTS, CSP, X-Content-Type-Options, clickjacking) and software disclosure |
 | `snmp-info.lua` | 161/udp (probes via `pontus.snmp_get`; scan with `--udp-ports 161`) | SNMP readable with a default community (`public`/`private`) and the system info it discloses |
+| `ssh-hostkey.lua` | SSH ports (probes via `pontus.ssh_hostkey`; needs `ssh-keyscan`/`ssh-keygen`) | each host key (algo/bits/SHA-256 fingerprint) and weak/deprecated keys (DSA, RSA <2048) |
 | `telnet.lua`, `telnet.py` | TCP/23 | minimal one-protocol examples of the API |
 
 All signatures are clean-room — derived from public well-known-port/protocol

@@ -104,6 +104,20 @@ impl PluginRunner for LuaRunner {
                 )?;
                 pontus.set("snmp_get", snmp_get)?;
 
+                let ssh_hostkey = scope.create_function(|lua, (host, port): (String, u16)| {
+                    let keys = caps.ssh_hostkey(&host, port).map_err(mlua::Error::external)?;
+                    let arr = lua.create_table()?;
+                    for (i, k) in keys.into_iter().enumerate() {
+                        let t = lua.create_table()?;
+                        t.set("algo", k.algo)?;
+                        t.set("bits", k.bits)?;
+                        t.set("fingerprint", k.fingerprint)?;
+                        arr.set(i + 1, t)?;
+                    }
+                    Ok(arr)
+                })?;
+                pontus.set("ssh_hostkey", ssh_hostkey)?;
+
                 lua.globals().set("pontus", pontus)?;
 
                 let target_val = lua.to_value(target)?;
@@ -248,6 +262,12 @@ mod tests {
             // Only the "public" community "answers", to exercise nil handling.
             Ok((community == "public").then(|| "Test Router v1".to_string()))
         }
+        fn ssh_hostkey(&self, _host: &str, _port: u16) -> Result<Vec<crate::capability::SshHostKey>, CapError> {
+            Ok(vec![
+                crate::capability::SshHostKey { algo: "ED25519".into(), bits: 256, fingerprint: "SHA256:aaa".into() },
+                crate::capability::SshHostKey { algo: "RSA".into(), bits: 1024, fingerprint: "SHA256:bbb".into() },
+            ])
+        }
     }
 
     #[test]
@@ -292,6 +312,22 @@ mod tests {
         let findings = h.run_with(&plugin, &Target::new("10.0.0.1"), &StubHttp).unwrap();
         assert_eq!(findings.len(), 1, "only the public community answered (private → nil)");
         assert!(findings[0].title.contains("Test Router v1"));
+    }
+
+    #[test]
+    fn first_party_ssh_hostkey_records_keys_and_flags_weak_rsa() {
+        let mut h = PluginHost::new();
+        h.register(Box::new(LuaRunner::new()));
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/plugins/ssh-hostkey.lua");
+        let plugin = Plugin::from_path("ssh-hostkey", Language::Lua, path);
+        let target = Target::new("10.0.0.1").with_port(22, "tcp");
+        let findings = h.run_with(&plugin, &target, &StubHttp).unwrap();
+        // Two key info findings + one weak-RSA (1024-bit) warning.
+        assert_eq!(findings.iter().filter(|f| f.title.starts_with("SSH host key")).count(), 2);
+        assert!(findings.iter().any(|f| f.title.contains("Weak SSH RSA") && f.severity == Severity::Medium));
+        // No SSH port observed → nothing probed.
+        let none = h.run_with(&plugin, &Target::new("10.0.0.1").with_port(80, "tcp"), &StubHttp).unwrap();
+        assert!(none.is_empty());
     }
 
     #[test]
