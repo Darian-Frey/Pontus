@@ -18,7 +18,9 @@ mod snmp;
 pub mod python;
 pub mod wasm;
 
-pub use capability::{CapError, HostCapabilities, HttpResponse, NetCapabilities, NoCapabilities};
+pub use capability::{
+    CapError, HostCapabilities, HttpResponse, NetCapabilities, NoCapabilities, SshHostKey,
+};
 pub use finding::{Finding, Severity, Target, TargetPort};
 pub use lua::LuaRunner;
 pub use plugin::{Language, Plugin, PluginError, PluginHost, PluginRunner, PluginSource};
