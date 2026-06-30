@@ -118,6 +118,20 @@ impl PluginRunner for LuaRunner {
                 })?;
                 pontus.set("ssh_hostkey", ssh_hostkey)?;
 
+                let smb_shares = scope.create_function(|lua, host: String| {
+                    let shares = caps.smb_shares(&host).map_err(mlua::Error::external)?;
+                    let arr = lua.create_table()?;
+                    for (i, s) in shares.into_iter().enumerate() {
+                        let t = lua.create_table()?;
+                        t.set("kind", s.kind)?;
+                        t.set("name", s.name)?;
+                        t.set("comment", s.comment)?;
+                        arr.set(i + 1, t)?;
+                    }
+                    Ok(arr)
+                })?;
+                pontus.set("smb_shares", smb_shares)?;
+
                 lua.globals().set("pontus", pontus)?;
 
                 let target_val = lua.to_value(target)?;
@@ -268,6 +282,12 @@ mod tests {
                 crate::capability::SshHostKey { algo: "RSA".into(), bits: 1024, fingerprint: "SHA256:bbb".into() },
             ])
         }
+        fn smb_shares(&self, _host: &str) -> Result<Vec<crate::capability::SmbShare>, CapError> {
+            Ok(vec![
+                crate::capability::SmbShare { kind: "Disk".into(), name: "backups".into(), comment: "".into() },
+                crate::capability::SmbShare { kind: "IPC".into(), name: "IPC$".into(), comment: "IPC Service".into() },
+            ])
+        }
     }
 
     #[test]
@@ -328,6 +348,23 @@ mod tests {
         // No SSH port observed → nothing probed.
         let none = h.run_with(&plugin, &Target::new("10.0.0.1").with_port(80, "tcp"), &StubHttp).unwrap();
         assert!(none.is_empty());
+    }
+
+    #[test]
+    fn first_party_smb_enum_lists_shares_when_smb_is_open() {
+        let mut h = PluginHost::new();
+        h.register(Box::new(LuaRunner::new()));
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/plugins/smb-enum.lua");
+        let plugin = Plugin::from_path("smb-enum", Language::Lua, path);
+
+        let target = Target::new("10.0.0.1").with_port(445, "tcp");
+        let findings = h.run_with(&plugin, &target, &StubHttp).unwrap();
+        // One "anonymous enumeration" finding + one per share (2).
+        assert!(findings.iter().any(|f| f.title.contains("Anonymous SMB") && f.severity == Severity::Medium));
+        assert_eq!(findings.iter().filter(|f| f.title.starts_with("SMB share")).count(), 2);
+
+        // No SMB port observed → nothing probed.
+        assert!(h.run_with(&plugin, &Target::new("10.0.0.1").with_port(80, "tcp"), &StubHttp).unwrap().is_empty());
     }
 
     #[test]

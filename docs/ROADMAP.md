@@ -68,7 +68,7 @@ Phases group features from [VISION.md](VISION.md). The ordering reflects D-006 (
 - [x] `pontus-daemon`: scheduled rescans persisting to the store (F-018)
 - [x] Alert rules + delivery (desktop/webhook/Slack/Discord/email) (F-019)
 - [x] `pontus-plugins`: stable `Finding` API with pyo3 / mlua / wasmtime runners (D-003), wired into `scan --plugins` with a `findings` store table + CLI command (F-020)
-- [ ] First-party plugins: SMB enum, SNMP walk, SSH host-key, HTTP header audit
+- [x] First-party plugins: SMB enum, SNMP, SSH host-key, HTTP header audit (F-021)
 - [x] Credentialed scanning — user-supplied SSH for installed-package inventory (F-022); SNMP to come
 
 **Acceptance:** a scheduled rescan runs unattended and writes observations; a matching change fires exactly one alert on a configured channel; the same trivial plugin runs under all three runners and the WASM one cannot touch the filesystem.

@@ -19,7 +19,7 @@ pub mod python;
 pub mod wasm;
 
 pub use capability::{
-    CapError, HostCapabilities, HttpResponse, NetCapabilities, NoCapabilities, SshHostKey,
+    CapError, HostCapabilities, HttpResponse, NetCapabilities, NoCapabilities, SmbShare, SshHostKey,
 };
 pub use finding::{Finding, Severity, Target, TargetPort};
 pub use lua::LuaRunner;

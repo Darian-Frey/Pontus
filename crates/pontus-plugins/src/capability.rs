@@ -50,6 +50,14 @@ pub struct SshHostKey {
     pub fingerprint: String,
 }
 
+/// An SMB share as reported by `smbclient -L -g` (Disk/IPC/Printer).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SmbShare {
+    pub kind: String,
+    pub name: String,
+    pub comment: String,
+}
+
 /// Capabilities the host exposes to a plugin. Object-safe so a runner can hold a
 /// `&dyn HostCapabilities` for the duration of a run.
 pub trait HostCapabilities: Send + Sync {
@@ -68,6 +76,11 @@ pub trait HostCapabilities: Send + Sync {
     /// Fetch a host's SSH host keys (algorithm, bit size, SHA-256 fingerprint) from
     /// `host:port`. Default: unavailable.
     fn ssh_hostkey(&self, _host: &str, _port: u16) -> Result<Vec<SshHostKey>, CapError> {
+        Err(CapError::Unavailable)
+    }
+
+    /// List a host's SMB shares via an anonymous/null session. Default: unavailable.
+    fn smb_shares(&self, _host: &str) -> Result<Vec<SmbShare>, CapError> {
         Err(CapError::Unavailable)
     }
 }
@@ -182,6 +195,44 @@ impl HostCapabilities for NetCapabilities {
             .map_err(|e| CapError::Tool(format!("ssh-keygen: {e}")))?;
         Ok(String::from_utf8_lossy(&fp.stdout).lines().filter_map(parse_keygen_line).collect())
     }
+
+    fn smb_shares(&self, host: &str) -> Result<Vec<SmbShare>, CapError> {
+        // Resolve and scope-check (SMB on 445) before connecting (F-007).
+        (host, 445u16)
+            .to_socket_addrs()
+            .map_err(|e| CapError::BadUrl(format!("{host}: {e}")))?
+            .find(|a| (self.allow)(a.ip()))
+            .ok_or_else(|| CapError::OutOfScope(host.to_string()))?;
+
+        // Shell out to the user's smbclient (D-006): null session, grepable list,
+        // bounded by a per-operation timeout so an unresponsive host can't hang us.
+        let secs = self.timeout.as_secs().max(1).to_string();
+        let out = Command::new("smbclient")
+            .args(["-N", "-g", "-t", &secs, "-L", &format!("//{host}")])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+            .map_err(|_| CapError::Tool("smbclient".into()))?;
+        // Non-zero exit (access denied / not SMB) → no shares, not a hard error.
+        Ok(String::from_utf8_lossy(&out.stdout).lines().filter_map(parse_smb_line).collect())
+    }
+}
+
+/// Parse one `smbclient -L -g` line: `Type|Name|Comment`, keeping share types.
+fn parse_smb_line(line: &str) -> Option<SmbShare> {
+    let parts: Vec<&str> = line.splitn(3, '|').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let kind = parts[0].trim();
+    if !matches!(kind, "Disk" | "IPC" | "Printer") {
+        return None; // skip Server/Workgroup info lines
+    }
+    Some(SmbShare {
+        kind: kind.to_string(),
+        name: parts[1].trim().to_string(),
+        comment: parts[2].trim().to_string(),
+    })
 }
 
 /// Parse one `ssh-keygen -l` line: `<bits> <SHA256:…> <comment…> (<TYPE>)`.
@@ -266,6 +317,19 @@ mod tests {
         // ssh-keygen error/comment lines (no fingerprint) are skipped.
         assert!(parse_keygen_line("# host.example:22 SSH-2.0-OpenSSH_9.6").is_none());
         assert!(parse_keygen_line("").is_none());
+    }
+
+    #[test]
+    fn parses_smbclient_grepable_shares() {
+        assert_eq!(
+            parse_smb_line("Disk|backups|Nightly backups").unwrap(),
+            SmbShare { kind: "Disk".into(), name: "backups".into(), comment: "Nightly backups".into() }
+        );
+        assert_eq!(parse_smb_line("IPC|IPC$|IPC Service").unwrap().name, "IPC$");
+        // Server/Workgroup info lines and malformed lines are skipped.
+        assert!(parse_smb_line("Server|FILESRV|comment").is_none());
+        assert!(parse_smb_line("Workgroup|WORKGROUP|FILESRV").is_none());
+        assert!(parse_smb_line("not piped").is_none());
     }
 
     #[test]
