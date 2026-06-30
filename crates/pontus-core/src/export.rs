@@ -200,6 +200,182 @@ fn csv_field(s: &str) -> String {
     }
 }
 
+/// Minimal HTML escaping for text interpolated into the report.
+fn esc(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// A self-contained, styled HTML report (inline CSS, no external resources) — for
+/// reading and sharing. Asset-centric: a summary, an overview table, then a
+/// per-host section with ports, vulnerabilities and findings.
+pub fn to_html(report: &ScanReport) -> String {
+    let total_vulns: usize = report.hosts.iter().map(|h| h.vulns.len()).sum();
+    let total_findings: usize = report.hosts.iter().map(|h| h.findings.len()).sum();
+    let up = report.hosts.iter().filter(|h| h.up).count();
+    let kev = report
+        .hosts
+        .iter()
+        .flat_map(|h| &h.vulns)
+        .filter(|v| v.kev)
+        .count();
+
+    let mut s = String::new();
+    s.push_str("<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">\n");
+    s.push_str("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
+    s.push_str(&format!("<title>Pontus scan report — scan {}</title>\n", report.scan.id));
+    s.push_str(STYLE);
+    s.push_str("</head>\n<body>\n");
+
+    s.push_str("<h1>Pontus scan report</h1>\n");
+    s.push_str(&format!(
+        "<p class=\"meta\">Scan #{} · targets <code>{}</code> · started {}{} · {} v{}</p>\n",
+        report.scan.id,
+        esc(&report.scan.targets),
+        esc(&report.scan.started_at),
+        report
+            .scan
+            .finished_at
+            .as_deref()
+            .map(|f| format!(" → {}", esc(f)))
+            .unwrap_or_default(),
+        report.tool,
+        report.tool_version,
+    ));
+
+    // Summary cards.
+    s.push_str("<div class=\"cards\">\n");
+    for (label, value) in [
+        ("Hosts", report.hosts.len()),
+        ("Up", up),
+        ("Vulnerabilities", total_vulns),
+        ("KEV", kev),
+        ("Findings", total_findings),
+    ] {
+        s.push_str(&format!("<div class=\"card\"><div class=\"n\">{value}</div><div class=\"l\">{label}</div></div>\n"));
+    }
+    s.push_str("</div>\n");
+
+    // Overview table.
+    s.push_str("<h2>Inventory</h2>\n<table><thead><tr>");
+    for h in ["Host", "Identity", "OS", "Ports", "Vulns", "Findings"] {
+        s.push_str(&format!("<th>{h}</th>"));
+    }
+    s.push_str("</tr></thead><tbody>\n");
+    for h in &report.hosts {
+        let host = esc(h.ip.as_deref().unwrap_or(&h.identity_value));
+        s.push_str(&format!(
+            "<tr><td><a href=\"#h{}\">{}</a></td><td>{} {}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>\n",
+            h.asset_id,
+            host,
+            esc(&h.identity_kind),
+            esc(&h.identity_value),
+            esc(h.os.as_deref().unwrap_or("-")),
+            h.ports.len(),
+            h.vulns.len(),
+            h.findings.len(),
+        ));
+    }
+    s.push_str("</tbody></table>\n");
+
+    // Per-host detail.
+    s.push_str("<h2>Hosts</h2>\n");
+    for h in &report.hosts {
+        let host = esc(h.ip.as_deref().unwrap_or(&h.identity_value));
+        s.push_str(&format!("<section class=\"host\" id=\"h{}\">\n", h.asset_id));
+        s.push_str(&format!(
+            "<h3>{} <span class=\"sub\">{} {} · {} · OS {}</span></h3>\n",
+            host,
+            esc(&h.identity_kind),
+            esc(&h.identity_value),
+            if h.up { "up" } else { "down" },
+            esc(h.os.as_deref().unwrap_or("unknown")),
+        ));
+
+        if !h.ports.is_empty() {
+            s.push_str("<p class=\"ports\"><strong>Open ports:</strong> ");
+            let ports: Vec<String> = h
+                .ports
+                .iter()
+                .map(|p| {
+                    let svc = p
+                        .service
+                        .as_deref()
+                        .map(|v| format!(" {}", esc(v)))
+                        .unwrap_or_default();
+                    format!("<code>{}/{}{}</code>", esc(&p.proto), p.port, svc)
+                })
+                .collect();
+            s.push_str(&ports.join(" "));
+            s.push_str("</p>\n");
+        }
+
+        if !h.vulns.is_empty() {
+            s.push_str("<table class=\"vulns\"><thead><tr><th>CVE</th><th>Band</th><th>CVSS</th><th>EPSS</th><th>KEV</th><th>Match</th></tr></thead><tbody>\n");
+            for v in &h.vulns {
+                s.push_str(&format!(
+                    "<tr class=\"b-{}\"><td><a href=\"https://nvd.nist.gov/vuln/detail/{}\">{}</a></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>\n",
+                    esc(&v.band),
+                    esc(&v.cve_id),
+                    esc(&v.cve_id),
+                    esc(&v.band),
+                    v.cvss.map(|c| format!("{c:.1}")).unwrap_or_else(|| "-".into()),
+                    v.epss.map(|e| format!("{:.1}%", e * 100.0)).unwrap_or_else(|| "-".into()),
+                    if v.kev { "● KEV" } else { "" },
+                    if v.version_matched { "exact" } else { "product-wide" },
+                ));
+            }
+            s.push_str("</tbody></table>\n");
+        }
+
+        if !h.findings.is_empty() {
+            s.push_str("<ul class=\"findings\">\n");
+            for f in &h.findings {
+                s.push_str(&format!(
+                    "<li class=\"sev-{}\"><span class=\"badge\">{}</span> <strong>{}</strong> <span class=\"plugin\">{}</span><div class=\"desc\">{}</div></li>\n",
+                    esc(&f.severity),
+                    esc(&f.severity),
+                    esc(&f.title),
+                    esc(&f.plugin),
+                    esc(&f.description),
+                ));
+            }
+            s.push_str("</ul>\n");
+        }
+        s.push_str("</section>\n");
+    }
+
+    s.push_str("</body></html>\n");
+    s
+}
+
+const STYLE: &str = r#"<style>
+:root{--bg:#0f1115;--fg:#e6e6e6;--mut:#9aa0a6;--card:#1a1d23;--line:#2a2e36;
+--crit:#c0392b;--high:#e06a0a;--med:#d4a017;--low:#6b7280}
+*{box-sizing:border-box}body{margin:0;padding:2rem;background:var(--bg);color:var(--fg);
+font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif}
+h1{font-size:1.5rem;margin:0 0 .25rem}h2{margin:2rem 0 .5rem;border-bottom:1px solid var(--line);padding-bottom:.25rem}
+h3{margin:.2rem 0}.meta{color:var(--mut);margin:.25rem 0 1rem}code{background:var(--card);padding:.05rem .3rem;border-radius:3px}
+a{color:#6cb6ff;text-decoration:none}a:hover{text-decoration:underline}
+.cards{display:flex;gap:1rem;flex-wrap:wrap;margin:1rem 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:.75rem 1.25rem;min-width:6rem}
+.card .n{font-size:1.6rem;font-weight:600}.card .l{color:var(--mut);font-size:.8rem;text-transform:uppercase;letter-spacing:.05em}
+table{border-collapse:collapse;width:100%;margin:.5rem 0}th,td{text-align:left;padding:.4rem .6rem;border-bottom:1px solid var(--line)}
+th{color:var(--mut);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+.host{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:1rem 1.25rem;margin:1rem 0}
+.host .sub{color:var(--mut);font-size:.85rem;font-weight:400}
+.b-critical td:first-child a,.b-critical td:nth-child(2){color:var(--crit);font-weight:600}
+.b-high td:first-child a,.b-high td:nth-child(2){color:var(--high);font-weight:600}
+.b-medium td:first-child a,.b-medium td:nth-child(2){color:var(--med)}
+.findings{list-style:none;padding:0}.findings li{padding:.4rem 0;border-bottom:1px solid var(--line)}
+.badge{display:inline-block;min-width:4.5rem;text-align:center;padding:.05rem .4rem;border-radius:4px;font-size:.75rem;text-transform:uppercase;background:var(--low);color:#fff}
+.sev-critical .badge{background:var(--crit)}.sev-high .badge{background:var(--high)}.sev-medium .badge{background:var(--med)}
+.plugin{color:var(--mut);font-size:.8rem}.desc{color:var(--mut);font-size:.85rem;margin-top:.15rem}
+</style>
+"#;
+
 /// SARIF 2.1.0 — each vulnerability and plugin finding becomes a result, so the
 /// scan can flow into CI / code-scanning dashboards. The host (IP/identity) is the
 /// result location.
@@ -393,6 +569,44 @@ mod tests {
         assert_eq!(lines.len(), 2, "header + one host");
         assert!(lines[1].contains("192.168.1.10"));
         assert!(lines[1].contains("tcp/80"));
+    }
+
+    #[test]
+    fn html_is_self_contained_and_escapes() {
+        let (store, s) = seed();
+        let html = to_html(&report(&store, s).unwrap());
+        assert!(html.starts_with("<!doctype html>"));
+        assert!(html.contains("<style>") && !html.contains("http-equiv=\"refresh\""));
+        assert!(html.contains("Pontus scan report"));
+        assert!(html.contains("CVE-2023-44487"));
+        assert!(html.contains("192.168.1.10"));
+        assert!(html.contains("HSTS not set"));
+    }
+
+    #[test]
+    fn html_escapes_special_characters_in_findings() {
+        let store = Store::open_in_memory().unwrap();
+        let sc = store.begin_scan("n", "s", None).unwrap();
+        let sig = IdentitySignals { ip: Some("10.0.0.1".parse().unwrap()), ..Default::default() };
+        let a = store.record(&sig, sc, &ObservationState { up: true, ..Default::default() }).unwrap();
+        store
+            .record_finding(
+                sc,
+                &crate::StoredFinding {
+                    asset_id: a,
+                    plugin: "p".into(),
+                    title: "<script>alert(1)</script>".into(),
+                    severity: "low".into(),
+                    description: "a & b < c".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        store.finish_scan(sc).unwrap();
+        let html = to_html(&report(&store, sc).unwrap());
+        assert!(!html.contains("<script>alert(1)</script>"), "title must be escaped");
+        assert!(html.contains("&lt;script&gt;"));
+        assert!(html.contains("a &amp; b &lt; c"));
     }
 
     #[test]
