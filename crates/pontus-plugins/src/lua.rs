@@ -49,13 +49,19 @@ impl PluginRunner for LuaRunner {
         Language::Lua
     }
 
-    fn run(&self, plugin: &Plugin, target: &Target) -> Result<Vec<Finding>, PluginError> {
+    fn run(
+        &self,
+        plugin: &Plugin,
+        target: &Target,
+        caps: &dyn crate::capability::HostCapabilities,
+    ) -> Result<Vec<Finding>, PluginError> {
         let rt = |message: String| PluginError::Runtime { plugin: plugin.name.clone(), message };
         let conv =
             |message: String| PluginError::Conversion { plugin: plugin.name.clone(), message };
 
         // Curated built-ins only — base + table/string/math/coroutine. No io/os/
-        // package/debug, so the plugin has no filesystem or OS surface.
+        // package/debug, so the plugin has no filesystem or OS surface. Network
+        // access is only via the host-mediated, scope-enforced `pontus.*` table.
         let libs = StdLib::TABLE | StdLib::STRING | StdLib::MATH | StdLib::COROUTINE;
         let lua = Lua::new_with(libs, LuaOptions::default()).map_err(|e| rt(e.to_string()))?;
         lua.set_memory_limit(self.memory_limit).map_err(|e| rt(e.to_string()))?;
@@ -71,27 +77,45 @@ impl PluginRunner for LuaRunner {
             .get(ENTRYPOINT)
             .map_err(|_| conv(format!("no global function `{ENTRYPOINT}(target)`")))?;
 
-        let target_val = lua
-            .to_value(target)
-            .map_err(|e| conv(format!("encoding target: {e}")))?;
-        let ret: Value = check
-            .call(target_val)
-            .map_err(|e| rt(format!("{ENTRYPOINT}(): {e}")))?;
+        // A `scope` lets us register host functions that borrow `caps` for the
+        // duration of the call without requiring a 'static closure.
+        let findings = lua
+            .scope(|scope| {
+                let pontus = lua.create_table()?;
+                let http_get = scope.create_function(|lua, url: String| {
+                    let resp = caps.http_get(&url).map_err(mlua::Error::external)?;
+                    let t = lua.create_table()?;
+                    t.set("status", resp.status)?;
+                    let headers = lua.create_table()?;
+                    for (k, v) in resp.headers {
+                        headers.set(k, v)?;
+                    }
+                    t.set("headers", headers)?;
+                    t.set("body", resp.body)?;
+                    Ok(t)
+                })?;
+                pontus.set("http_get", http_get)?;
+                lua.globals().set("pontus", pontus)?;
 
-        // Returning nothing is valid — no findings.
-        if ret.is_nil() {
-            return Ok(Vec::new());
-        }
-        lua.from_value(ret)
-            .map_err(|e| conv(format!("decoding findings: {e}")))
+                let target_val = lua.to_value(target)?;
+                let ret: Value = check.call(target_val)?;
+                if ret.is_nil() {
+                    return Ok(Vec::new());
+                }
+                lua.from_value(ret)
+            })
+            .map_err(|e| rt(format!("{ENTRYPOINT}(): {e}")))?;
+        Ok(findings)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::capability::{CapError, HostCapabilities, HttpResponse};
     use crate::finding::Severity;
     use crate::plugin::{PluginHost, PluginSource};
+    use std::collections::BTreeMap;
 
     const TELNET: &str = r#"
         function check(target)
@@ -200,6 +224,52 @@ mod tests {
         assert_eq!(findings.len(), 2, "HTTP + Telnet flagged, HTTPS ignored");
         assert!(findings.iter().any(|f| f.title.contains("Telnet") && f.severity == Severity::High));
         assert!(findings.iter().any(|f| f.title.contains("HTTP") && f.severity == Severity::Low));
+    }
+
+    // A stub capability returning a canned HTTP response, so the Lua↔capability
+    // bridge can be tested without a network.
+    struct StubHttp;
+    impl HostCapabilities for StubHttp {
+        fn http_get(&self, _url: &str) -> Result<HttpResponse, CapError> {
+            let mut headers = BTreeMap::new();
+            headers.insert("server".to_string(), "nginx/1.18.0".to_string());
+            Ok(HttpResponse { status: 200, headers, body: "hi".to_string() })
+        }
+    }
+
+    #[test]
+    fn a_plugin_can_probe_via_the_http_capability() {
+        let mut h = PluginHost::new();
+        h.register(Box::new(LuaRunner::new()));
+        let plugin = Plugin::inline(
+            "hdr",
+            Language::Lua,
+            r#"function check(target)
+                 local r = pontus.http_get("http://" .. target.ip .. "/")
+                 local out = {}
+                 if r.headers["server"] then
+                   out[#out+1] = { title = "Server: " .. r.headers["server"],
+                                   severity = "info", metadata = { status = tostring(r.status) } }
+                 end
+                 return out
+               end"#,
+        );
+        let findings = h.run_with(&plugin, &Target::new("10.0.0.1"), &StubHttp).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].title.contains("nginx/1.18.0"));
+        assert_eq!(findings[0].metadata.get("status").map(String::as_str), Some("200"));
+    }
+
+    #[test]
+    fn without_capabilities_http_get_errors() {
+        // The default run() grants NoCapabilities, so a probing plugin fails rather
+        // than reaching the network.
+        let plugin = Plugin::inline(
+            "hdr",
+            Language::Lua,
+            r#"function check(t) pontus.http_get("http://10.0.0.1/"); return {} end"#,
+        );
+        assert!(host().run(&plugin, &Target::new("10.0.0.1")).is_err());
     }
 
     #[test]

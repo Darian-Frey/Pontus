@@ -71,7 +71,14 @@ impl PluginRunner for WasmRunner {
         Language::Wasm
     }
 
-    fn run(&self, plugin: &Plugin, target: &Target) -> Result<Vec<Finding>, PluginError> {
+    fn run(
+        &self,
+        plugin: &Plugin,
+        target: &Target,
+        _caps: &dyn crate::capability::HostCapabilities,
+    ) -> Result<Vec<Finding>, PluginError> {
+        // The untrusted WASM tier stays import-free; host capabilities are not
+        // exposed here (a future mediated import is possible — see F-021 notes).
         let rt = |message: String| PluginError::Runtime { plugin: plugin.name.clone(), message };
         let conv =
             |message: String| PluginError::Conversion { plugin: plugin.name.clone(), message };

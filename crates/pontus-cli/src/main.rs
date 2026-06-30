@@ -13,7 +13,7 @@ use pontus_core::{
     Detector, IdentitySignals, KevCatalog, NativeDetector, NmapDetector, ObservationState,
     PortObservation, PortProbe, Scope, Store, StoredFinding, Vuln,
 };
-use pontus_plugins::{Language, Plugin, PluginHost};
+use pontus_plugins::{Language, NetCapabilities, Plugin, PluginHost};
 use std::collections::HashMap;
 use std::path::Path;
 use std::net::{IpAddr, SocketAddr, TcpStream};
@@ -434,6 +434,13 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
     if !plugins.is_empty() {
         println!("plugins: {} loaded from {}", plugins.len(), args.plugins.as_deref().unwrap_or(""));
     }
+    // Host capabilities for probing plugins (F-021): a scope-enforced HTTP fetch.
+    // The predicate gates every request by the scan's scope (F-007), so a plugin
+    // can only reach hosts already authorised for this scan.
+    let plugin_caps = {
+        let scope = scope.clone();
+        NetCapabilities::new(move |ip| scope.contains(ip), Duration::from_millis(args.inspect_timeout_ms))
+    };
 
     let mut up = 0u64;
     let mut os_guessed = 0u64;
@@ -587,7 +594,7 @@ async fn run_scan(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         if !plugins.is_empty() {
             let target = build_target(host, hostname.as_deref(), &state.open_ports);
             for plugin in &plugins {
-                match plugin_host.run(plugin, &target) {
+                match plugin_host.run_with(plugin, &target, &plugin_caps) {
                     Ok(findings) => {
                         for f in &findings {
                             store.record_finding(scan_id, &to_stored(f, asset_id))?;
