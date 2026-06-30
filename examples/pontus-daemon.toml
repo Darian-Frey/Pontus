@@ -55,6 +55,18 @@ url = "https://hooks.slack.com/services/XXXX/YYYY/ZZZZ"
 # [channels.webhook]
 # url = "https://example.internal/pontus-hook"   # receives the full alert JSON
 
+# Email over SMTP (lettre). tls: starttls (587, default) | tls (implicit, 465) |
+# none (plaintext, for a trusted local relay only). Omit username/password for an
+# unauthenticated relay.
+# [channels.email]
+# smtp_server = "smtp.example.com"
+# smtp_port = 587
+# from = "pontus@example.com"
+# to = ["admin@example.com"]
+# username = "pontus@example.com"
+# password = "app-specific-password"
+# tls = "starttls"
+
 # Notify when SSH appears anywhere it wasn't before.
 [[alert]]
 name = "ssh-opened"

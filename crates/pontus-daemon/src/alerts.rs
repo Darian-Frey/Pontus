@@ -4,13 +4,17 @@
 //! delivery side — turning a fired [`Alert`] into a notification on each of its
 //! channels. Channels: `log` (always available), `desktop` (`notify-send`),
 //! `webhook` (generic JSON POST), `slack`/`discord` (their incoming-webhook JSON
-//! shapes). Email is intentionally not yet implemented (an SMTP dependency is a
-//! separate decision) — see F-019's remaining slice.
+//! shapes), and `email` (SMTP via lettre, rustls).
 
-use crate::config::{Channels, WebhookChannel};
+use crate::config::{Channels, EmailChannel, WebhookChannel};
 use crate::logging;
+use lettre::transport::smtp::authentication::Credentials;
+use lettre::{Message, SmtpTransport, Transport};
 use pontus_core::alert::Alert;
 use std::time::Duration;
+
+/// Timeout for SMTP delivery so a hung mail server can't stall the daemon.
+const SMTP_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// HTTP timeout for webhook delivery so a hung endpoint can't stall the daemon.
 const WEBHOOK_TIMEOUT: Duration = Duration::from_secs(10);
@@ -25,6 +29,7 @@ pub fn deliver(channels: &Channels, alert: &Alert) {
             "webhook" => post(alert, "webhook", channels.webhook.as_ref(), generic_body(alert)),
             "slack" => post(alert, "slack", channels.slack.as_ref(), text_body("text", alert)),
             "discord" => post(alert, "discord", channels.discord.as_ref(), text_body("content", alert)),
+            "email" => email(alert, channels.email.as_ref()),
             other => logging::warn(&format!("alert {:?}: unknown channel {other:?}", alert.rule)),
         }
     }
@@ -74,4 +79,48 @@ fn desktop(alert: &Alert) {
             alert.rule
         )),
     }
+}
+
+fn email(alert: &Alert, cfg: Option<&EmailChannel>) {
+    let Some(cfg) = cfg else {
+        logging::warn(&format!("alert {:?}: email not configured, skipping", alert.rule));
+        return;
+    };
+    match send_email(alert, cfg) {
+        Ok(()) => logging::info(&format!("alert {:?}: delivered via email", alert.rule)),
+        Err(e) => logging::warn(&format!("alert {:?}: email delivery failed: {e}", alert.rule)),
+    }
+}
+
+/// Build and send one alert as an email. Returns a human error string on failure
+/// (logged by the caller, never fatal).
+fn send_email(alert: &Alert, cfg: &EmailChannel) -> Result<(), String> {
+    let from = cfg.from.parse().map_err(|e| format!("bad `from` address {:?}: {e}", cfg.from))?;
+    let body = format!(
+        "{summary}\n\nHost:   {ip} ({identity})\nRule:   {rule}\nPlugin/source: alert\n",
+        summary = alert.summary,
+        ip = alert.ip,
+        identity = alert.identity,
+        rule = alert.rule,
+    );
+    let mut builder = Message::builder()
+        .from(from)
+        .subject(format!("Pontus alert: {}", alert.rule));
+    for to in &cfg.to {
+        builder = builder.to(to.parse().map_err(|e| format!("bad `to` address {to:?}: {e}"))?);
+    }
+    let message = builder.body(body).map_err(|e| format!("building message: {e}"))?;
+
+    // Transport per TLS mode: starttls (587), implicit tls (465), or plaintext.
+    let transport = match cfg.tls.as_str() {
+        "tls" => SmtpTransport::relay(&cfg.smtp_server).map_err(|e| e.to_string())?,
+        "starttls" => SmtpTransport::starttls_relay(&cfg.smtp_server).map_err(|e| e.to_string())?,
+        _ => SmtpTransport::builder_dangerous(&cfg.smtp_server),
+    };
+    let mut transport = transport.port(cfg.smtp_port).timeout(Some(SMTP_TIMEOUT));
+    if let (Some(user), Some(pass)) = (&cfg.username, &cfg.password) {
+        transport = transport.credentials(Credentials::new(user.clone(), pass.clone()));
+    }
+    transport.build().send(&message).map_err(|e| e.to_string())?;
+    Ok(())
 }

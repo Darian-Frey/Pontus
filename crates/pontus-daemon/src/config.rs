@@ -9,9 +9,9 @@ use pontus_core::alert::{self, Condition};
 use serde::Deserialize;
 use std::time::Duration;
 
-/// Known alert channels. `webhook`/`slack`/`discord` require a matching
-/// `[channels.*]` table with a URL; `log` and `desktop` need no configuration.
-const KNOWN_CHANNELS: [&str; 5] = ["log", "desktop", "webhook", "slack", "discord"];
+/// Known alert channels. `webhook`/`slack`/`discord`/`email` require a matching
+/// `[channels.*]` table; `log` and `desktop` need no configuration.
+const KNOWN_CHANNELS: [&str; 6] = ["log", "desktop", "webhook", "slack", "discord", "email"];
 
 /// Top-level daemon configuration, deserialised from the TOML config file.
 #[derive(Debug, Clone, Deserialize)]
@@ -69,6 +69,8 @@ pub struct Channels {
     pub slack: Option<WebhookChannel>,
     #[serde(default)]
     pub discord: Option<WebhookChannel>,
+    #[serde(default)]
+    pub email: Option<EmailChannel>,
 }
 
 /// A webhook-style channel: an HTTPS endpoint to POST JSON to.
@@ -76,6 +78,32 @@ pub struct Channels {
 #[serde(deny_unknown_fields)]
 pub struct WebhookChannel {
     pub url: String,
+}
+
+/// An SMTP email channel. `tls` is `starttls` (default, port 587), `tls` (implicit,
+/// port 465) or `none` (plaintext — only for a trusted local relay). Credentials
+/// are optional (omit both for an unauthenticated relay).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EmailChannel {
+    pub smtp_server: String,
+    #[serde(default = "default_smtp_port")]
+    pub smtp_port: u16,
+    pub from: String,
+    pub to: Vec<String>,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default = "default_tls")]
+    pub tls: String,
+}
+
+fn default_smtp_port() -> u16 {
+    587
+}
+fn default_tls() -> String {
+    "starttls".to_string()
 }
 
 /// One scheduled scan. Fields mirror the `pontus-cli scan` flags they map to, so
@@ -196,14 +224,28 @@ impl Config {
                     "webhook" => self.channels.webhook.is_some(),
                     "slack" => self.channels.slack.is_some(),
                     "discord" => self.channels.discord.is_some(),
+                    "email" => self.channels.email.is_some(),
                     _ => true, // log/desktop need no config
                 };
                 if !configured {
                     return Err(ConfigError::Invalid(format!(
-                        "alert {:?}: channel {ch:?} has no [channels.{ch}] url",
+                        "alert {:?}: channel {ch:?} has no [channels.{ch}] configuration",
                         a.name
                     )));
                 }
+            }
+        }
+
+        // Validate the email channel's settings when present.
+        if let Some(email) = &self.channels.email {
+            if email.to.is_empty() {
+                return Err(ConfigError::Invalid("[channels.email] has no `to` recipients".into()));
+            }
+            if !matches!(email.tls.as_str(), "starttls" | "tls" | "none") {
+                return Err(ConfigError::Invalid(format!(
+                    "[channels.email] tls must be starttls|tls|none, not {:?}",
+                    email.tls
+                )));
             }
         }
         Ok(())
@@ -364,6 +406,63 @@ channels = ["slack"]
         // slack channel referenced but no [channels.slack] url configured.
         let cfg: Config = toml::from_str(text).unwrap();
         assert!(cfg.validate().is_err(), "slack channel has no url");
+    }
+
+    #[test]
+    fn email_channel_parses_validates_and_defaults() {
+        let text = r#"
+[[job]]
+name = "j"
+targets = "10.0.0.0/24"
+interval = "1h"
+
+[channels.email]
+smtp_server = "smtp.example.com"
+from = "pontus@example.com"
+to = ["admin@example.com", "ops@example.com"]
+username = "pontus@example.com"
+password = "secret"
+
+[[alert]]
+name = "ssh-opened"
+on = "port_opened"
+port = 22
+channels = ["email"]
+"#;
+        let cfg: Config = toml::from_str(text).unwrap();
+        cfg.validate().unwrap();
+        let email = cfg.channels.email.as_ref().unwrap();
+        assert_eq!(email.smtp_port, 587, "default SMTP port");
+        assert_eq!(email.tls, "starttls", "default TLS mode");
+        assert_eq!(email.to.len(), 2);
+    }
+
+    #[test]
+    fn email_channel_rejects_bad_tls_and_no_recipients() {
+        let bad_tls = r#"
+[[job]]
+name = "j"
+targets = "10.0.0.0/24"
+interval = "1h"
+[channels.email]
+smtp_server = "s"
+from = "a@b.c"
+to = ["d@e.f"]
+tls = "wrap-it-in-magic"
+"#;
+        assert!(toml::from_str::<Config>(bad_tls).unwrap().validate().is_err(), "unknown tls mode");
+
+        let no_to = r#"
+[[job]]
+name = "j"
+targets = "10.0.0.0/24"
+interval = "1h"
+[channels.email]
+smtp_server = "s"
+from = "a@b.c"
+to = []
+"#;
+        assert!(toml::from_str::<Config>(no_to).unwrap().validate().is_err(), "no recipients");
     }
 
     #[test]
