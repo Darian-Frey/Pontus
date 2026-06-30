@@ -158,6 +158,16 @@ struct SshInventoryArgs {
     /// Connect timeout, seconds.
     #[arg(long, default_value_t = 10)]
     connect_timeout_s: u64,
+    /// Match installed packages to CVEs and enrich with EPSS/KEV (F-015), version-
+    /// accurate from the *installed* versions. Hits the network (NVD/EPSS). Bounded
+    /// to a built-in set of common network-service products unless --assess-packages
+    /// is given. Best run after `intel update`.
+    #[arg(long)]
+    assess_vulns: bool,
+    /// Comma-separated package names to assess against CVEs (overrides the built-in
+    /// set); only those found in the inventory are looked up. Implies --assess-vulns.
+    #[arg(long, value_name = "NAMES")]
+    assess_packages: Option<String>,
     /// Store path.
     #[arg(long, default_value = "pontus.db")]
     db: String,
@@ -977,8 +987,96 @@ fn run_ssh_inventory(args: SshInventoryArgs) -> Result<(), Box<dyn std::error::E
     for p in &inv.packages {
         store.record_package(scan_id, asset_id, &p.name, &p.version)?;
     }
-    store.finish_scan(scan_id)?;
     println!("  recorded {} package(s) against asset {asset_id} (scan {scan_id})", inv.packages.len());
+
+    // Credentialed CVE matching (F-022 + F-015): assess installed package versions
+    // against NVD — far more accurate than network-banner detection. Bounded to a
+    // selected set so a 2000-package host doesn't flood the NVD API.
+    if args.assess_vulns || args.assess_packages.is_some() {
+        assess_packages(&store, scan_id, asset_id, &inv, args.assess_packages.as_deref())?;
+    }
+
+    store.finish_scan(scan_id)?;
+    Ok(())
+}
+
+/// A small, clean-room set of common network-service products that map cleanly to
+/// NVD CPEs — the default selection for credentialed CVE matching when the user
+/// gives no explicit `--assess-packages` list. (Distro-advisory/OVAL-based whole-
+/// inventory matching is a larger future effort.)
+const CRED_ASSESS_PRODUCTS: &[&str] = &[
+    "openssh", "openssl", "nginx", "apache2", "httpd", "bind9", "bind", "dnsmasq",
+    "samba", "vsftpd", "proftpd", "postfix", "exim4", "dovecot", "mariadb", "mysql",
+    "postgresql", "redis", "mosquitto", "lighttpd", "haproxy", "squid", "sudo",
+];
+
+/// Normalise a distro package version to an upstream-ish version NVD can match:
+/// strip a leading `epoch:` and a trailing `-revision` (Debian) or `-release`
+/// (the `version-release` we collect from rpm). E.g. `1:8.9p1-3ubuntu0.10` → `8.9p1`.
+fn normalize_version(v: &str) -> String {
+    let no_epoch = v.split_once(':').map_or(v, |(_, rest)| rest);
+    match no_epoch.rfind('-') {
+        Some(i) => no_epoch[..i].to_string(),
+        None => no_epoch.to_string(),
+    }
+}
+
+/// Match installed packages to CVEs and record them as host-level vulns (port 0),
+/// version-accurate from the installed versions.
+fn assess_packages(
+    store: &Store,
+    scan_id: i64,
+    asset_id: i64,
+    inv: &pontus_core::SshInventory,
+    explicit: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let kev = load_kev_cache();
+    let mut cache: HashMap<(String, Option<String>), Vec<Vuln>> = HashMap::new();
+
+    // Build the (product, version) work list. With an explicit list, assess exactly
+    // those packages (by name); otherwise pick inventory packages whose name matches
+    // a known network-service product, assessed under that canonical product name.
+    let mut targets: Vec<(String, String)> = Vec::new(); // (product-to-query, version)
+    match explicit {
+        Some(list) => {
+            for want in list.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                match inv.packages.iter().find(|p| p.name == want || p.name.starts_with(want)) {
+                    Some(p) => targets.push((want.to_string(), normalize_version(&p.version))),
+                    None => println!("       assess {want}: not installed"),
+                }
+            }
+        }
+        None => {
+            for p in &inv.packages {
+                if let Some(prod) = CRED_ASSESS_PRODUCTS.iter().find(|e| p.name == **e || p.name.starts_with(*e)) {
+                    targets.push((prod.to_string(), normalize_version(&p.version)));
+                }
+            }
+        }
+    }
+    if targets.is_empty() {
+        println!("  no packages selected for CVE matching (try --assess-packages <names>)");
+        return Ok(());
+    }
+
+    let mut total = 0usize;
+    for (product, version) in targets {
+        let vulns = cache.entry((product.clone(), Some(version.clone()))).or_insert_with(|| {
+            match pontus_core::intel::assess(&product, Some(&version), &kev) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("note: vuln assessment for {product} failed: {e}");
+                    Vec::new()
+                }
+            }
+        });
+        println!("       vulns: {product} {version} → {} CVE(s)", vulns.len());
+        for v in vulns.iter() {
+            store.record_vuln(scan_id, asset_id, 0, v)?; // port 0 = host-level
+            total += 1;
+        }
+    }
+    println!("  recorded {total} CVE finding(s) — see `pontus-cli risk`");
     Ok(())
 }
 
@@ -1420,6 +1518,16 @@ mod tests {
     #[test]
     fn parses_single_ports_sorted_and_deduped() {
         assert_eq!(parse_ports("443,80,80").unwrap(), vec![80, 443]);
+    }
+
+    #[test]
+    fn normalize_version_strips_epoch_and_revision() {
+        assert_eq!(normalize_version("1:8.9p1-3ubuntu0.10"), "8.9p1"); // dpkg w/ epoch
+        assert_eq!(normalize_version("9.3p1-9.fc39"), "9.3p1"); // rpm version-release
+        assert_eq!(normalize_version("1.18.0-6ubuntu14.4"), "1.18.0"); // dpkg revision
+        assert_eq!(normalize_version("1.2.3"), "1.2.3"); // bare upstream, unchanged
+        assert_eq!(normalize_version("1.2.3-rc1-1"), "1.2.3-rc1"); // only the last '-' is the revision
+        assert_eq!(normalize_version(""), ""); // empty (e.g. apk) stays empty
     }
 
     #[test]
