@@ -4,3 +4,7 @@
 *.db-shm
 Cargo.lock.bak
 gui/build/
+
+# Exported reports (default filenames)
+/pontus-report.*
+/report.html
