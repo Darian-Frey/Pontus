@@ -30,6 +30,10 @@ pub enum Error {
     /// See the resolution hierarchy in [`crate::identity`] (C-003, F-004).
     #[error("identity resolution needs at least one signal (MAC, host key, hostname or IP)")]
     NoIdentitySignal,
+
+    /// A requested entity (e.g. a scan id) was not found in the store.
+    #[error("not found: {0}")]
+    NotFound(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

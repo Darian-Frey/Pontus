@@ -65,6 +65,20 @@ enum Command {
         #[arg(long)]
         scan: Option<i64>,
     },
+    /// Export a scan as JSON, SARIF 2.1 or CSV (F-023).
+    Export {
+        #[arg(long, default_value = "pontus.db")]
+        db: String,
+        /// Scan id (defaults to the most recent).
+        #[arg(long)]
+        scan: Option<i64>,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = ExportFormat::Json)]
+        format: ExportFormat,
+        /// Write to this file instead of stdout.
+        #[arg(long, short = 'o', value_name = "PATH")]
+        output: Option<String>,
+    },
     /// Manage cached vulnerability intelligence (CISA KEV, EPSS).
     Intel {
         #[command(subcommand)]
@@ -191,6 +205,17 @@ enum IntelCommand {
     },
 }
 
+/// Output format for `export` (F-023).
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum ExportFormat {
+    /// Pontus-native JSON (lossless).
+    Json,
+    /// SARIF 2.1 (findings for CI / code-scanning).
+    Sarif,
+    /// CSV inventory (one row per host).
+    Csv,
+}
+
 /// Which service detector to run over scan results.
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum DetectorKind {
@@ -309,6 +334,7 @@ async fn main() -> ExitCode {
         Command::Risk { db, scan } => run_risk(&db, scan),
         Command::Findings { db, scan } => run_findings(&db, scan),
         Command::Packages { db, scan } => run_packages(&db, scan),
+        Command::Export { db, scan, format, output } => run_export(&db, scan, format, output),
         Command::Diff { db, from, to, all } => run_diff(&db, from, to, all),
         Command::Tls(args) => run_tls(args),
         Command::Http(args) => run_http(args),
@@ -822,6 +848,38 @@ fn run_findings(db: &str, scan: Option<i64>) -> Result<(), Box<dyn std::error::E
         if !f.description.is_empty() {
             println!("             {}", f.description);
         }
+    }
+    Ok(())
+}
+
+/// Export a scan as JSON, SARIF 2.1 or CSV (F-023).
+fn run_export(
+    db: &str,
+    scan: Option<i64>,
+    format: ExportFormat,
+    output: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let store = Store::open(db)?;
+    let scan_id = match scan {
+        Some(id) => id,
+        None => store
+            .recent_scans(1)?
+            .first()
+            .map(|s| s.id)
+            .ok_or("no scans in the store")?,
+    };
+    let report = pontus_core::export::report(&store, scan_id)?;
+    let text = match format {
+        ExportFormat::Json => pontus_core::export::to_json(&report),
+        ExportFormat::Sarif => pontus_core::export::to_sarif(&report),
+        ExportFormat::Csv => pontus_core::export::to_csv(&report),
+    };
+    match output {
+        Some(path) => {
+            std::fs::write(&path, text)?;
+            eprintln!("wrote {path}");
+        }
+        None => println!("{text}"),
     }
     Ok(())
 }
