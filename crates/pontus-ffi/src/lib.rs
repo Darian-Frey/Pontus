@@ -157,6 +157,37 @@ pub unsafe extern "C" fn pontus_findings_json(handle: *mut PontusHandle, scan_id
     with_handle(handle, |h| serde_json::to_string(&h.store.findings_for_scan(scan_id).ok()?).ok())
 }
 
+/// Render a scan as a report in `format` ("html", "json", "sarif" or "csv"),
+/// returning the document text (F-023). Null on a bad handle, unknown format, or
+/// if the scan doesn't exist. Caller frees with [`pontus_string_free`].
+///
+/// # Safety
+/// `handle` must be valid (from [`pontus_open`]) and `format` a valid C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pontus_export(
+    handle: *mut PontusHandle,
+    scan_id: i64,
+    format: *const c_char,
+) -> *mut c_char {
+    if format.is_null() {
+        return ptr::null_mut();
+    }
+    let Ok(fmt) = (unsafe { CStr::from_ptr(format) }).to_str() else {
+        return ptr::null_mut();
+    };
+    let fmt = fmt.to_string();
+    with_handle(handle, |h| {
+        let report = pontus_core::export::report(&h.store, scan_id).ok()?;
+        Some(match fmt.as_str() {
+            "html" => pontus_core::export::to_html(&report),
+            "json" => pontus_core::export::to_json(&report),
+            "sarif" => pontus_core::export::to_sarif(&report),
+            "csv" => pontus_core::export::to_csv(&report),
+            _ => return None,
+        })
+    })
+}
+
 /// Designate `scan_id` as the baseline this store diffs against (F-014). Returns
 /// true on success. This is a metadata write to the GUI's own store — distinct
 /// from scanning, which the GUI does by shelling out to the CLI (D-008).
@@ -327,6 +358,17 @@ mod tests {
                 "plugin finding in JSON: {findings}");
         assert_eq!(read_and_free(unsafe { pontus_findings_json(handle, 2) }), "[]",
                    "scan with no findings is empty");
+
+        // Export the scan in each format (F-023).
+        let html_fmt = CString::new("html").unwrap();
+        let html = read_and_free(unsafe { pontus_export(handle, 1, html_fmt.as_ptr()) });
+        assert!(html.starts_with("<!doctype html>") && html.contains("Pontus scan report"));
+        let csv_fmt = CString::new("csv").unwrap();
+        let csv = read_and_free(unsafe { pontus_export(handle, 1, csv_fmt.as_ptr()) });
+        assert!(csv.contains("asset_id,identity_kind"));
+        // An unknown format yields null.
+        let bad_fmt = CString::new("pdf").unwrap();
+        assert!(unsafe { pontus_export(handle, 1, bad_fmt.as_ptr()) }.is_null());
 
         // Baseline write/read round-trip (F-014).
         assert_eq!(unsafe { pontus_baseline(handle) }, -1, "no baseline initially");

@@ -78,6 +78,20 @@ QJsonArray PontusClient::findings(long long scanId) {
     return handle_ ? parseAndFree(pontus_findings_json(handle_, scanId)) : QJsonArray{};
 }
 
+QString PontusClient::exportScan(long long scanId, const QString& format) {
+    if (!handle_) {
+        return {};
+    }
+    const QByteArray fmt = format.toUtf8();
+    char* out = pontus_export(handle_, scanId, fmt.constData());
+    if (!out) {
+        return {};
+    }
+    const QString text = QString::fromUtf8(out);
+    pontus_string_free(out); // Rust allocated it; we own freeing it.
+    return text;
+}
+
 QJsonObject PontusClient::localConfig() {
     char* json = pontus_local_config_json(); // no handle — it queries this machine
     if (!json) {

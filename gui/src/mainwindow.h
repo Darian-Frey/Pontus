@@ -32,6 +32,7 @@ private slots:
     void onTopology();
     void onRisk();
     void onFindings();
+    void onExport();
     void onNetConfig();
     void onFilterChanged(const QString& text);
     void onSelectionChanged();
