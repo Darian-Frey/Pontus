@@ -9,10 +9,12 @@ CLI  := target/release/pontus-cli
 GUI  := gui/build/pontus-gui
 DB   ?= pontus.db
 
-.PHONY: help build build-debug test clippy cap gui scan daemon clean
+.PHONY: help build build-debug test clippy cap gui scan daemon api clean
 
 DAEMON  := target/release/pontus-daemon
 DCONFIG ?= examples/pontus-daemon.toml
+API     := target/release/pontus-api
+BIND    ?= 127.0.0.1:8787
 
 help:
 	@echo "Pontus dev targets:"
@@ -24,6 +26,7 @@ help:
 	@echo "  make gui          build + cap + run the GUI (DB=$(DB)); GUI scans get raw privilege"
 	@echo "  make scan T=192.168.1.0/24 [S=<scope>] [P=22,80,443] [U=53,161,5353] [DB=<db>]"
 	@echo "  make daemon [DCONFIG=<config.toml>]   scheduled rescans (F-018); CLI gets raw privilege"
+	@echo "  make api [BIND=127.0.0.1:8787] [DB=<db>]   REST API (F-024); scans shell out to the cap'd CLI"
 	@echo "  make clean        remove build artefacts"
 
 build:
@@ -63,6 +66,12 @@ scan: cap
 # unprivileged probe.
 daemon: cap
 	$(DAEMON) --config $(DCONFIG)
+
+# Run the REST API (F-024). Depends on `cap` so scans launched over HTTP (which
+# shell out to the CLI) have raw-socket privilege. Set PONTUS_API_TOKEN to require
+# a bearer token before binding anywhere but loopback.
+api: cap
+	PONTUS_CLI=$(ROOT)/$(CLI) $(API) --db $(DB) --cli $(ROOT)/$(CLI) --bind $(BIND)
 
 clean:
 	cargo clean

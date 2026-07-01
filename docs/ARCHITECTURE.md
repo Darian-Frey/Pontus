@@ -43,6 +43,7 @@ Pontus is a three-tier system: a Qt6/C++ GUI frontend, a Rust core (`pontus-core
 - **`pontus-cli`** — command-line client; the Phase 1 driver and the reference consumer of the core API.
 - **`pontus-daemon`** — scheduled rescans and alert delivery (Phase 4).
 - **`pontus-plugins`** — plugin host with three sandboxed runners (Phase 4, D-003).
+- **`pontus-api`** — a small REST API (tiny_http) over the core; read endpoints plus `POST /scans` that shells out to the CLI (Phase 5, F-024).
 - **`gui/`** — Qt6/C++20 desktop frontend (Phase 2).
 
 ## The scan pipeline (hybrid)
