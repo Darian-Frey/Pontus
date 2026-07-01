@@ -14,6 +14,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFileInfo>
 #include <QStandardPaths>
 #include <QGroupBox>
 #include <QHeaderView>
@@ -319,22 +320,47 @@ void MainWindow::onExport() {
     }
     const long long scanId = scans.first().toObject().value("id").toInt();
 
-    QString selectedFilter;
-    const QString path = QFileDialog::getSaveFileName(
-        this, QStringLiteral("Export latest scan (#%1)").arg(scanId),
-        QStringLiteral("pontus-report.html"),
-        QStringLiteral("HTML report (*.html);;JSON (*.json);;SARIF 2.1 (*.sarif);;CSV (*.csv)"),
-        &selectedFilter);
-    if (path.isEmpty()) {
+    // A name filter → its file extension, so we can keep the filename's suffix in
+    // step with the selected filter.
+    const auto extForFilter = [](const QString& f) -> QString {
+        if (f.startsWith(QLatin1String("JSON"))) return QStringLiteral("json");
+        if (f.startsWith(QLatin1String("SARIF"))) return QStringLiteral("sarif");
+        if (f.startsWith(QLatin1String("CSV"))) return QStringLiteral("csv");
+        return QStringLiteral("html");
+    };
+
+    QFileDialog dialog(this, QStringLiteral("Export latest scan (#%1)").arg(scanId));
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setNameFilters({QStringLiteral("HTML report (*.html)"), QStringLiteral("JSON (*.json)"),
+                           QStringLiteral("SARIF 2.1 (*.sarif)"), QStringLiteral("CSV (*.csv)")});
+    dialog.selectFile(QStringLiteral("pontus-report.html"));
+    // When the user changes the filter, rewrite the filename's extension to match.
+    connect(&dialog, &QFileDialog::filterSelected, &dialog, [&dialog, &extForFilter](const QString& f) {
+        const QString files = dialog.selectedFiles().value(0);
+        QString base = QFileInfo(files).completeBaseName();
+        if (base.isEmpty()) {
+            base = QStringLiteral("pontus-report");
+        }
+        dialog.selectFile(base + QLatin1Char('.') + extForFilter(f));
+    });
+
+    if (dialog.exec() != QDialog::Accepted) {
         return; // cancelled
     }
-    // Format from the chosen filter (falls back to HTML).
+    const QString path = dialog.selectedFiles().value(0);
+    if (path.isEmpty()) {
+        return;
+    }
+
+    // Format follows the actual file extension (robust regardless of the filter),
+    // defaulting to HTML.
+    const QString suffix = QFileInfo(path).suffix().toLower();
     QString format = QStringLiteral("html");
-    if (selectedFilter.startsWith(QLatin1String("JSON"))) {
+    if (suffix == QLatin1String("json")) {
         format = QStringLiteral("json");
-    } else if (selectedFilter.startsWith(QLatin1String("SARIF"))) {
+    } else if (suffix == QLatin1String("sarif")) {
         format = QStringLiteral("sarif");
-    } else if (selectedFilter.startsWith(QLatin1String("CSV"))) {
+    } else if (suffix == QLatin1String("csv")) {
         format = QStringLiteral("csv");
     }
 
