@@ -1,8 +1,9 @@
 //! Plugin registry (F-026) — install first-party/community plugins from a
 //! git-hosted registry with **ed25519 signature verification**. A registry is an
 //! `index.json` plus the plugin files, served either over HTTP(S) (e.g. raw git
-//! URLs) or from a local directory (for testing/offline mirrors). Every plugin
-//! carries a signature over its bytes; on install Pontus verifies it against a
+//! URLs) or from a local directory (for testing/offline mirrors). The index is
+//! bound by a detached signature (`index.json.sig`) and every plugin carries a
+//! signature over its bytes; on fetch/install Pontus verifies both against a
 //! trusted registry public key and **refuses anything that doesn't verify**.
 //!
 //! Signing uses ed25519 (ed25519-dalek — pure Rust, no OpenSSL). Keys and
@@ -88,9 +89,18 @@ fn read_registry(registry: &str, rel: &str, timeout: Duration) -> Result<Vec<u8>
     }
 }
 
-/// Fetch and parse a registry's index.
-pub fn fetch_index(registry: &str, timeout: Duration) -> Result<RegistryIndex> {
+/// Fetch a registry's index and verify its detached signature (`index.json.sig`,
+/// a hex ed25519 signature over the raw `index.json` bytes) against the trusted
+/// public key. This binds the *listing* itself — names, file mappings,
+/// descriptions — not just each plugin's content. A missing or bad index
+/// signature is refused.
+pub fn fetch_index(registry: &str, public_hex: &str, timeout: Duration) -> Result<RegistryIndex> {
     let raw = read_registry(registry, "index.json", timeout)?;
+    let sig_bytes = read_registry(registry, "index.json.sig", timeout)?;
+    let sig_hex = String::from_utf8_lossy(&sig_bytes).trim().to_string();
+    if !verify(public_hex, &raw, &sig_hex) {
+        return Err(Error::Parse("registry index signature verification failed — refusing".into()));
+    }
     serde_json::from_slice(&raw).map_err(|e| Error::Parse(format!("registry index: {e}")))
 }
 
@@ -104,7 +114,7 @@ pub fn install(
     dest_dir: &Path,
     timeout: Duration,
 ) -> Result<PathBuf> {
-    let index = fetch_index(registry, timeout)?;
+    let index = fetch_index(registry, public_hex, timeout)?;
     let entry = index
         .plugins
         .iter()
@@ -194,7 +204,11 @@ mod tests {
                 signature: sig,
             }],
         };
-        std::fs::write(dir.join("index.json"), serde_json::to_vec(&index).unwrap()).unwrap();
+        let index_bytes = serde_json::to_vec(&index).unwrap();
+        std::fs::write(dir.join("index.json"), &index_bytes).unwrap();
+        // Sign the index too (detached), binding the listing itself.
+        let index_sig = sign(&kp.secret_hex, &index_bytes).unwrap();
+        std::fs::write(dir.join("index.json.sig"), index_sig).unwrap();
     }
 
     fn tmp(sub: &str) -> PathBuf {
@@ -232,6 +246,26 @@ mod tests {
         let err = install(reg.to_str().unwrap(), "demo", &kp.public_hex, &dest, Duration::from_secs(2)).unwrap_err();
         assert!(matches!(err, Error::Parse(_)));
         assert!(!dest.join("demo.lua").exists(), "nothing is written when verification fails");
+
+        let _ = std::fs::remove_dir_all(&reg);
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+
+    #[test]
+    fn install_refuses_a_tampered_index() {
+        let kp = keygen().unwrap();
+        let reg = tmp("reg_idx");
+        let _ = std::fs::remove_dir_all(&reg);
+        write_local_registry(&reg, &kp, "demo.lua", b"plugin");
+        // Tamper the listing (not the plugin file) after it was signed.
+        let idx = std::fs::read_to_string(reg.join("index.json")).unwrap();
+        std::fs::write(reg.join("index.json"), idx.replace("demo plugin", "trust me")).unwrap();
+
+        let dest = tmp("plugins_idx");
+        let _ = std::fs::remove_dir_all(&dest);
+        let err = install(reg.to_str().unwrap(), "demo", &kp.public_hex, &dest, Duration::from_secs(2)).unwrap_err();
+        assert!(matches!(err, Error::Parse(_)), "index signature must fail: {err:?}");
+        assert!(!dest.join("demo.lua").exists());
 
         let _ = std::fs::remove_dir_all(&reg);
         let _ = std::fs::remove_dir_all(&dest);
