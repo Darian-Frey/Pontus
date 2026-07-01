@@ -17,6 +17,8 @@ are complete and Phase 3 (Intelligence) is in progress; everything below is on
 
 #### Phase 5 — reporting and ecosystem
 
+- Plugin registry with signature verification (F-026): `pontus-cli registry list|install|keygen|sign`. A registry is an `index.json` + plugin files (served over HTTP(S) raw-git URLs or a local directory); each plugin carries an ed25519 signature over its bytes (ed25519-dalek — pure Rust, no OpenSSL). `install` verifies the signature against a trusted registry public key and refuses — writing nothing — if it doesn't verify. `keygen`/`sign` are the maintainer tools (keys/signatures hex-encoded). In-app (GUI) browse/install is a follow-up.
+
 - REST API (F-024): the new `pontus-api` crate (tiny_http) serves the core over HTTP — `GET /health`, `/assets`, `/scans`, `/scans/{id}/observations|risk|findings`, `/scans/{id}/export?format=html|json|sarif|csv`, and `POST /scans` to launch a scan (shelling out to the capability-granted CLI, D-008). Read endpoints reopen the store per request; the API holds no raw privilege. Binds to loopback by default; set `PONTUS_API_TOKEN` to require `Authorization: Bearer <token>` on every request (needed before exposing it beyond loopback). `make api`.
 
 - Asset enrichment (F-027): `pontus-cli enrich [--db]` tags each public-IP asset with its ASN, network owner, country and (where inferable) cloud provider; `enrich --ip <IP>` is a one-off lookup. Data comes from Team Cymru's IP-to-ASN mapping over DNS (via the user's `dig` — no vendored GeoIP dataset), and the cloud provider is inferred clean-room from the ASN name (AWS/GCP/Azure/DigitalOcean/Oracle/Cloudflare/…). Private/reserved IPs are skipped; results persist in an `enrichment` table. (WHOIS, city-level geo and IPv6 are follow-ups.)

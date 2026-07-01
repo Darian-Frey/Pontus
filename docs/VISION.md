@@ -177,8 +177,8 @@ Automatable HTTP API over the core. **Acceptance:** a scan can be launched and i
 Parse `.nmap` XML into the asset store as a migration bridge. **Acceptance:** an existing Nmap XML imports as assets + observations with no data loss in mapped fields. ✅ The `nmap` core module parses `nmap -oX` (via `roxmltree`, allowing the DOCTYPE real Nmap emits) and records each up host: addresses map onto the identity hierarchy (MAC → hostname → IP, C-003), open ports + service/version become the observation's ports, and the best `osmatch` becomes the OS guess. `pontus-cli import-nmap <file.xml> [--db] [--operator]`. Import is a parse-and-record, not a scan (no packets sent, so scope enforcement doesn't apply). Live-verified against real `nmap -oX` output. 4 core tests.
 
 ### F-026 Plugin registry
-**Priority:** Could · **Status:** Not started
-Git-hosted registry, browsable in-app, one-click install, signature verification. **Acceptance:** a signed plugin installs from the registry; an unsigned one is refused.
+**Priority:** Could · **Status:** Done (CLI; in-app browse a follow-up)
+Git-hosted registry, browsable in-app, one-click install, signature verification. **Acceptance:** a signed plugin installs from the registry; an unsigned one is refused. ✅ The `registry` core module: a registry is an `index.json` + plugin files served over HTTP(S) (raw git URLs) or a local directory; every plugin carries an **ed25519 signature** (ed25519-dalek — pure Rust, no OpenSSL) over its bytes, and `install` verifies it against a trusted registry public key, **refusing (and writing nothing) if it doesn't verify**. `pontus-cli registry list|install|keygen|sign` (keygen/sign are the maintainer tools; keys/sigs hex-encoded, dependency-free). Live-verified end-to-end: a signed plugin installs, a tampered one is refused. **Remaining:** in-app (GUI) browse/install, and signing the whole index (currently the trust anchor is the per-file signature against the trusted key).
 
 ### F-027 Enrichment (ASN/geo/WHOIS/cloud)
 **Priority:** Could · **Status:** In progress (ASN/owner/country/cloud done; WHOIS + city-geo next)

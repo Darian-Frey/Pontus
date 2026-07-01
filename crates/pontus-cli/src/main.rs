@@ -106,6 +106,11 @@ enum Command {
         #[command(subcommand)]
         command: IntelCommand,
     },
+    /// Install plugins from a signed registry (F-026).
+    Registry {
+        #[command(subcommand)]
+        command: RegistryCommand,
+    },
     /// Diff two scans: opened/closed ports, new/vanished hosts, address moves.
     Diff {
         #[arg(long, default_value = "pontus.db")]
@@ -210,6 +215,42 @@ struct SshInventoryArgs {
     /// Operator name, recorded in the audit log.
     #[arg(long)]
     operator: Option<String>,
+}
+
+#[derive(Subcommand)]
+enum RegistryCommand {
+    /// List the plugins a registry offers (an HTTP(S) base URL or a local dir).
+    List {
+        #[arg(long)]
+        registry: String,
+        #[arg(long, default_value_t = 5000)]
+        timeout_ms: u64,
+    },
+    /// Install a plugin, verifying its signature against a trusted public key.
+    /// A plugin that doesn't verify is refused.
+    Install {
+        /// Plugin name (as listed by `registry list`).
+        name: String,
+        #[arg(long)]
+        registry: String,
+        /// Trusted registry public key (hex, from `registry keygen`).
+        #[arg(long)]
+        pubkey: String,
+        /// Directory to install into.
+        #[arg(long, default_value = "plugins")]
+        dir: String,
+        #[arg(long, default_value_t = 5000)]
+        timeout_ms: u64,
+    },
+    /// Generate an ed25519 signing keypair (for a registry maintainer).
+    Keygen,
+    /// Sign a plugin file with a secret key, printing the signature (maintainer).
+    Sign {
+        file: String,
+        /// Secret key (hex, from `registry keygen`).
+        #[arg(long)]
+        key: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -357,6 +398,7 @@ async fn main() -> ExitCode {
         Command::Scan(args) => run_scan(args).await,
         Command::Assets { db } => list_assets(&db),
         Command::Intel { command } => run_intel(command),
+        Command::Registry { command } => run_registry(command),
         Command::Risk { db, scan } => run_risk(&db, scan),
         Command::Findings { db, scan } => run_findings(&db, scan),
         Command::Packages { db, scan } => run_packages(&db, scan),
@@ -819,6 +861,40 @@ fn run_intel(command: IntelCommand) -> Result<(), Box<dyn std::error::Error>> {
                     path.display()
                 ),
             }
+        }
+    }
+    Ok(())
+}
+
+/// Install plugins from a signed registry (F-026).
+fn run_registry(command: RegistryCommand) -> Result<(), Box<dyn std::error::Error>> {
+    use pontus_core::registry;
+    match command {
+        RegistryCommand::Keygen => {
+            let kp = registry::keygen()?;
+            println!("public key (share / trust with `--pubkey`):\n  {}", kp.public_hex);
+            println!("secret key (keep private — signs plugins):\n  {}", kp.secret_hex);
+        }
+        RegistryCommand::Sign { file, key } => {
+            let data = std::fs::read(&file)?;
+            let sig = registry::sign(&key, &data)?;
+            println!("{sig}");
+        }
+        RegistryCommand::List { registry, timeout_ms } => {
+            let index = registry::fetch_index(&registry, Duration::from_millis(timeout_ms))?;
+            if index.plugins.is_empty() {
+                println!("registry has no plugins");
+            } else {
+                println!("plugins in {registry}:");
+                for p in &index.plugins {
+                    println!("  {:<24} [{}]  {}", p.name, p.language, p.description);
+                }
+            }
+        }
+        RegistryCommand::Install { name, registry, pubkey, dir, timeout_ms } => {
+            let dest = std::path::PathBuf::from(&dir);
+            let path = registry::install(&registry, &name, &pubkey, &dest, Duration::from_millis(timeout_ms))?;
+            println!("installed {name} → {} (signature verified)", path.display());
         }
     }
     Ok(())

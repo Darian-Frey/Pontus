@@ -22,6 +22,7 @@ pub mod nmap;
 pub mod os;
 mod raw;
 pub mod rdns;
+pub mod registry;
 pub mod scan;
 pub mod scope;
 pub mod store;
