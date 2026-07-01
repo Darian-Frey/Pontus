@@ -17,6 +17,8 @@ are complete and Phase 3 (Intelligence) is in progress; everything below is on
 
 #### Phase 5 — reporting and ecosystem
 
+- Nmap XML import (F-025): `pontus-cli import-nmap <file.xml>` parses an existing `nmap -oX` run into the asset store as assets + observations — a migration bridge so Nmap users start from their real inventory. Host addresses map onto the identity hierarchy (MAC → hostname → IP), open ports and service/version become the observation's ports, and the best OS match becomes the OS guess. Import is a parse-and-record (no packets sent). Handles the DOCTYPE/stylesheet that real Nmap XML carries.
+
 - Scan export (F-023): `pontus-cli export --format html|json|sarif|csv [--scan N] [-o PATH]`. HTML is a self-contained, styled report (summary cards, inventory table, per-host ports/vulns/findings, band/severity-coloured, escaped); JSON is the lossless, pipeline-friendly native output (the gap Nmap leaves); SARIF 2.1 maps each vulnerability and plugin finding to a result (host as location, risk/severity → error/warning/note, deduplicated rules) for CI / code-scanning dashboards; CSV is one row per host. Built in the `export` core module as a per-host projection of the existing store (observations + risk-ranked vulns + findings + packages). In the GUI, **File ▸ Export latest scan… (Ctrl+E)** writes the chosen format via a save dialog, over a new `pontus_export` FFI. PDF is a thin follow-up (render the HTML via the user's headless browser).
 
 #### Phase 4 — monitoring and plugins

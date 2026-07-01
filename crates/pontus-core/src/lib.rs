@@ -17,6 +17,7 @@ pub mod identity;
 pub mod intel;
 pub mod model;
 pub mod netinfo;
+pub mod nmap;
 pub mod os;
 mod raw;
 pub mod rdns;

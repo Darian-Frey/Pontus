@@ -173,8 +173,8 @@ HTML/PDF reports, SARIF 2.1, and JSON-native output. **Acceptance:** a scan expo
 Automatable HTTP API over the core. **Acceptance:** a scan can be launched and its results retrieved entirely over HTTP.
 
 ### F-025 Nmap XML import
-**Priority:** Should · **Status:** Not started
-Parse `.nmap` XML into the asset store as a migration bridge. **Acceptance:** an existing Nmap XML imports as assets + observations with no data loss in mapped fields.
+**Priority:** Should · **Status:** Done
+Parse `.nmap` XML into the asset store as a migration bridge. **Acceptance:** an existing Nmap XML imports as assets + observations with no data loss in mapped fields. ✅ The `nmap` core module parses `nmap -oX` (via `roxmltree`, allowing the DOCTYPE real Nmap emits) and records each up host: addresses map onto the identity hierarchy (MAC → hostname → IP, C-003), open ports + service/version become the observation's ports, and the best `osmatch` becomes the OS guess. `pontus-cli import-nmap <file.xml> [--db] [--operator]`. Import is a parse-and-record, not a scan (no packets sent, so scope enforcement doesn't apply). Live-verified against real `nmap -oX` output. 4 core tests.
 
 ### F-026 Plugin registry
 **Priority:** Could · **Status:** Not started
