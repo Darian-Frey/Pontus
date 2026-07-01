@@ -238,6 +238,8 @@ enum ExportFormat {
     Csv,
     /// Self-contained HTML report.
     Html,
+    /// PDF (renders the HTML report via the user's headless browser). Needs `-o`.
+    Pdf,
 }
 
 /// Which service detector to run over scan results.
@@ -959,11 +961,22 @@ fn run_export(
             .ok_or("no scans in the store")?,
     };
     let report = pontus_core::export::report(&store, scan_id)?;
+
+    // PDF is special: it renders the HTML report via the user's headless browser
+    // (D-006), so it must write to a file, not stdout.
+    if let ExportFormat::Pdf = format {
+        let path = output.as_deref().ok_or("--format pdf requires -o <file.pdf>")?;
+        render_pdf(&pontus_core::export::to_html(&report), path)?;
+        eprintln!("wrote {path}");
+        return Ok(());
+    }
+
     let text = match format {
         ExportFormat::Json => pontus_core::export::to_json(&report),
         ExportFormat::Sarif => pontus_core::export::to_sarif(&report),
         ExportFormat::Csv => pontus_core::export::to_csv(&report),
         ExportFormat::Html => pontus_core::export::to_html(&report),
+        ExportFormat::Pdf => unreachable!("handled above"),
     };
     match output {
         Some(path) => {
@@ -973,6 +986,66 @@ fn run_export(
         None => println!("{text}"),
     }
     Ok(())
+}
+
+/// Render an HTML report to a PDF by shelling out to the user's headless browser
+/// (or wkhtmltopdf) — the "use the user's tool" posture (D-006). No PDF library is
+/// pulled into the tree.
+fn render_pdf(html: &str, out_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let tool = find_pdf_renderer()
+        .ok_or("no PDF renderer found — install wkhtmltopdf or a Chromium/Chrome browser")?;
+
+    // Absolute paths: Chrome's --print-to-pdf and file:// URLs want them.
+    let tmp = std::env::temp_dir().join(format!("pontus-report-{}.html", std::process::id()));
+    std::fs::write(&tmp, html)?;
+    let out_abs = std::path::absolute(out_path)?;
+
+    let (prog, args) = pdf_command(&tool, &tmp.to_string_lossy(), &out_abs.to_string_lossy());
+    let status = std::process::Command::new(&prog)
+        .args(&args)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    let _ = std::fs::remove_file(&tmp);
+
+    match status {
+        Ok(s) if s.success() && out_abs.exists() => Ok(()),
+        Ok(_) => Err(format!("{prog} did not produce a PDF").into()),
+        Err(e) => Err(format!("could not run {prog}: {e}").into()),
+    }
+}
+
+/// First available HTML→PDF renderer on PATH, preferring the dedicated wkhtmltopdf.
+fn find_pdf_renderer() -> Option<String> {
+    ["wkhtmltopdf", "chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "chrome"]
+        .into_iter()
+        .find(|t| tool_on_path(t))
+        .map(String::from)
+}
+
+fn tool_on_path(name: &str) -> bool {
+    std::env::var_os("PATH")
+        .is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(name).is_file()))
+}
+
+/// Build the renderer command. wkhtmltopdf takes `in out`; the Chrome family uses
+/// headless print-to-pdf.
+fn pdf_command(tool: &str, input: &str, output: &str) -> (String, Vec<String>) {
+    if tool == "wkhtmltopdf" {
+        (tool.to_string(), vec!["--quiet".into(), input.to_string(), output.to_string()])
+    } else {
+        (
+            tool.to_string(),
+            vec![
+                "--headless=new".into(),
+                "--disable-gpu".into(),
+                "--no-sandbox".into(),
+                "--no-pdf-header-footer".into(),
+                format!("--print-to-pdf={output}"),
+                format!("file://{input}"),
+            ],
+        )
+    }
 }
 
 /// List installed packages gathered by a credentialed scan (F-022).
@@ -1684,6 +1757,19 @@ mod tests {
         assert_eq!(normalize_version("1.2.3"), "1.2.3"); // bare upstream, unchanged
         assert_eq!(normalize_version("1.2.3-rc1-1"), "1.2.3-rc1"); // only the last '-' is the revision
         assert_eq!(normalize_version(""), ""); // empty (e.g. apk) stays empty
+    }
+
+    #[test]
+    fn pdf_command_shapes_per_renderer() {
+        let (p, a) = pdf_command("wkhtmltopdf", "/tmp/in.html", "/tmp/out.pdf");
+        assert_eq!(p, "wkhtmltopdf");
+        assert_eq!(a, vec!["--quiet", "/tmp/in.html", "/tmp/out.pdf"]);
+
+        let (p, a) = pdf_command("google-chrome", "/tmp/in.html", "/tmp/out.pdf");
+        assert_eq!(p, "google-chrome");
+        assert!(a.iter().any(|x| x == "--headless=new"));
+        assert!(a.contains(&"--print-to-pdf=/tmp/out.pdf".to_string()));
+        assert!(a.contains(&"file:///tmp/in.html".to_string()));
     }
 
     #[test]
