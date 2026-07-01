@@ -118,6 +118,18 @@ CREATE TABLE IF NOT EXISTS packages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_packages_scan ON packages(scan_id);
+
+-- Enrichment facts for an asset's public IP (F-027): ASN, network owner, country
+-- and inferred cloud provider. One row per asset (the latest lookup).
+CREATE TABLE IF NOT EXISTS enrichment (
+    asset_id   INTEGER PRIMARY KEY REFERENCES assets(id),
+    ip         TEXT NOT NULL,
+    asn        INTEGER,
+    asn_name   TEXT,
+    country    TEXT,
+    cloud      TEXT,
+    updated_at TEXT NOT NULL
+);
 "#;
 
 /// A scan's audit record, for listing and diff headers.
@@ -204,6 +216,18 @@ pub struct StoredPackage {
     pub ip: Option<String>,
     pub name: String,
     pub version: String,
+}
+
+/// Enrichment facts for an asset's public IP (F-027).
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct StoredEnrichment {
+    pub asset_id: i64,
+    pub ip: String,
+    pub asn: Option<u32>,
+    pub asn_name: Option<String>,
+    pub country: Option<String>,
+    pub cloud: Option<String>,
+    pub updated_at: String,
 }
 
 /// One observation in an asset's history, for the GUI detail pane.
@@ -513,6 +537,41 @@ impl Store {
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Record (or replace) enrichment facts for an asset's IP (F-027).
+    pub fn record_enrichment(&self, asset_id: i64, ip: &str, e: &crate::enrich::Enrichment) -> Result<()> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT OR REPLACE INTO enrichment
+                (asset_id, ip, asn, asn_name, country, cloud, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![asset_id, ip, e.asn, e.asn_name, e.country, e.cloud, now],
+        )?;
+        Ok(())
+    }
+
+    /// Enrichment for an asset, if any has been recorded.
+    pub fn enrichment_for_asset(&self, asset_id: i64) -> Result<Option<StoredEnrichment>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT asset_id, ip, asn, asn_name, country, cloud, updated_at
+                 FROM enrichment WHERE asset_id = ?1",
+                params![asset_id],
+                |r| {
+                    Ok(StoredEnrichment {
+                        asset_id: r.get(0)?,
+                        ip: r.get(1)?,
+                        asn: r.get(2)?,
+                        asn_name: r.get(3)?,
+                        country: r.get(4)?,
+                        cloud: r.get(5)?,
+                        updated_at: r.get(6)?,
+                    })
+                },
+            )
+            .optional()?)
     }
 
     /// Hosts ranked by the C-002 exploitation-weighted risk model (F-015).

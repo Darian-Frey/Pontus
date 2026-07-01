@@ -11,6 +11,7 @@ pub mod cred;
 pub mod detect;
 pub mod diff;
 pub mod discovery;
+pub mod enrich;
 pub mod export;
 pub mod error;
 pub mod identity;
@@ -49,7 +50,7 @@ pub use tls::{CertInfo, Finding, ProtocolVersion, TlsReport, inspect};
 pub use webtech::{Category, Tech, WebCorpus, WebFingerprint};
 pub use store::{
     AssetObservation, AssetSummary, AssetVuln, Edge, HostObservation, HostRisk, RankedVuln,
-    ScanRef, StoredFinding, StoredPackage, Store,
+    ScanRef, StoredEnrichment, StoredFinding, StoredPackage, Store,
 };
 
 #[cfg(test)]
