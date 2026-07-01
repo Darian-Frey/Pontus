@@ -1,0 +1,21 @@
+[package]
+name = "pontus-api"
+description = "REST API over pontus-core (F-024)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "pontus-api"
+path = "src/main.rs"
+
+[dependencies]
+# A small, blocking HTTP server (tiny_http) over the headless core: read endpoints
+# reopen the store per request (SQLite handles concurrent readers), and launching a
+# scan shells out to the capability-granted pontus-cli (D-008), the same posture as
+# the daemon — the API holds no raw privilege.
+pontus-core = { path = "../pontus-core" }
+tiny_http = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+clap = { workspace = true }

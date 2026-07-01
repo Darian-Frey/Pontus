@@ -17,6 +17,8 @@ are complete and Phase 3 (Intelligence) is in progress; everything below is on
 
 #### Phase 5 — reporting and ecosystem
 
+- REST API (F-024): the new `pontus-api` crate (tiny_http) serves the core over HTTP — `GET /health`, `/assets`, `/scans`, `/scans/{id}/observations|risk|findings`, `/scans/{id}/export?format=html|json|sarif|csv`, and `POST /scans` to launch a scan (shelling out to the capability-granted CLI, D-008). Read endpoints reopen the store per request; the API holds no raw privilege. Binds to loopback by default; set `PONTUS_API_TOKEN` to require `Authorization: Bearer <token>` on every request (needed before exposing it beyond loopback). `make api`.
+
 - Asset enrichment (F-027): `pontus-cli enrich [--db]` tags each public-IP asset with its ASN, network owner, country and (where inferable) cloud provider; `enrich --ip <IP>` is a one-off lookup. Data comes from Team Cymru's IP-to-ASN mapping over DNS (via the user's `dig` — no vendored GeoIP dataset), and the cloud provider is inferred clean-room from the ASN name (AWS/GCP/Azure/DigitalOcean/Oracle/Cloudflare/…). Private/reserved IPs are skipped; results persist in an `enrichment` table. (WHOIS, city-level geo and IPv6 are follow-ups.)
 
 - Nmap XML import (F-025): `pontus-cli import-nmap <file.xml>` parses an existing `nmap -oX` run into the asset store as assets + observations — a migration bridge so Nmap users start from their real inventory. Host addresses map onto the identity hierarchy (MAC → hostname → IP), open ports and service/version become the observation's ports, and the best OS match becomes the OS guess. Import is a parse-and-record (no packets sent). Handles the DOCTYPE/stylesheet that real Nmap XML carries.

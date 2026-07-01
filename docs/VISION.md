@@ -169,8 +169,8 @@ Optional SSH/SNMP using *user-supplied* credentials for inventory depth (never g
 HTML/PDF reports, SARIF 2.1, and JSON-native output. **Acceptance:** a scan exports to all three; SARIF validates against the 2.1 schema. The `export` core module builds a `ScanReport` (a per-host projection of observations + risk-ranked vulns + plugin findings + packages, joined by `asset_id`) and serialises it four ways: **HTML** (a self-contained, styled report — summary cards, inventory table, per-host ports/vulns/findings, band/severity-coloured, all interpolated text escaped), **JSON-native** (lossless — the differentiator Nmap lacks), **SARIF 2.1** (each vuln/finding a result with the host as location, severity→level, deduped rules, per-spec shape), and **CSV** (one row per host). `pontus-cli export --format html|json|sarif|csv [--scan N] [-o file]`. Live-verified end-to-end (a scan with findings exported to all four). **Remaining:** PDF — a thin follow-up, rendering the HTML via the user's headless browser (D-006 posture).
 
 ### F-024 REST API
-**Priority:** Could · **Status:** Not started
-Automatable HTTP API over the core. **Acceptance:** a scan can be launched and its results retrieved entirely over HTTP.
+**Priority:** Could · **Status:** Done
+Automatable HTTP API over the core. **Acceptance:** a scan can be launched and its results retrieved entirely over HTTP. ✅ The `pontus-api` crate (tiny_http — a small, blocking server, minimal deps) serves: `GET /health`, `/assets`, `/scans`, `/scans/{id}/observations|risk|findings`, `/scans/{id}/export?format=html|json|sarif|csv`, and `POST /scans` (launches a scan by shelling out to the capability-granted CLI, D-008, and returns the new scan). Read endpoints reopen the store per request (SQLite concurrent readers); the API holds no raw privilege. Binds loopback by default; if `PONTUS_API_TOKEN` is set, every request needs `Authorization: Bearer <token>`. `make api [BIND=…]`. Live-verified end-to-end: a scan launched over `POST /scans` then retrieved via the read endpoints, and token auth (401/200).
 
 ### F-025 Nmap XML import
 **Priority:** Should · **Status:** Done
