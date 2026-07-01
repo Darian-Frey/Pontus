@@ -83,7 +83,7 @@ Phases group features from [VISION.md](VISION.md). The ordering reflects D-006 (
 **Deliverables:**
 - [ ] Report builder: HTML/PDF, plus JSON-native output and SARIF 2.1
 - [ ] REST API over the core
-- [ ] Nmap XML import (migration bridge)
+- [x] Nmap XML import (migration bridge) (F-025)
 - [ ] Plugin registry with signature verification
 - [ ] Enrichment: ASN/geo/WHOIS, cloud-provider tagging
 - [ ] Windows release pipeline (core + GUI)

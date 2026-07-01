@@ -65,6 +65,16 @@ enum Command {
         #[arg(long)]
         scan: Option<i64>,
     },
+    /// Import an Nmap XML file (`nmap -oX`) as assets + observations (F-025).
+    ImportNmap {
+        /// Path to the Nmap XML file.
+        file: String,
+        #[arg(long, default_value = "pontus.db")]
+        db: String,
+        /// Operator name, recorded in the audit log.
+        #[arg(long)]
+        operator: Option<String>,
+    },
     /// Export a scan as JSON, SARIF 2.1 or CSV (F-023).
     Export {
         #[arg(long, default_value = "pontus.db")]
@@ -336,6 +346,7 @@ async fn main() -> ExitCode {
         Command::Risk { db, scan } => run_risk(&db, scan),
         Command::Findings { db, scan } => run_findings(&db, scan),
         Command::Packages { db, scan } => run_packages(&db, scan),
+        Command::ImportNmap { file, db, operator } => run_import_nmap(&file, &db, operator),
         Command::Export { db, scan, format, output } => run_export(&db, scan, format, output),
         Command::Diff { db, from, to, all } => run_diff(&db, from, to, all),
         Command::Tls(args) => run_tls(args),
@@ -851,6 +862,18 @@ fn run_findings(db: &str, scan: Option<i64>) -> Result<(), Box<dyn std::error::E
             println!("             {}", f.description);
         }
     }
+    Ok(())
+}
+
+/// Import an Nmap XML file as assets + observations (F-025).
+fn run_import_nmap(file: &str, db: &str, operator: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+    let xml = std::fs::read_to_string(file)?;
+    let store = Store::open(db)?;
+    let summary = pontus_core::nmap::import(&store, &xml, file, operator.as_deref())?;
+    println!(
+        "imported {} of {} host(s) from {file} as scan {} ({} observation(s))",
+        summary.observations, summary.hosts, summary.scan_id, summary.observations,
+    );
     Ok(())
 }
 

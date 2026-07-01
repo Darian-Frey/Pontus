@@ -34,6 +34,10 @@ pub enum Error {
     /// A requested entity (e.g. a scan id) was not found in the store.
     #[error("not found: {0}")]
     NotFound(String),
+
+    /// Failed to parse imported data (e.g. Nmap XML).
+    #[error("parse error: {0}")]
+    Parse(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
