@@ -220,9 +220,13 @@ struct SshInventoryArgs {
 #[derive(Subcommand)]
 enum RegistryCommand {
     /// List the plugins a registry offers (an HTTP(S) base URL or a local dir).
+    /// The index signature is verified against `--pubkey` before listing.
     List {
         #[arg(long)]
         registry: String,
+        /// Trusted registry public key (hex, from `registry keygen`).
+        #[arg(long)]
+        pubkey: String,
         #[arg(long, default_value_t = 5000)]
         timeout_ms: u64,
     },
@@ -880,8 +884,8 @@ fn run_registry(command: RegistryCommand) -> Result<(), Box<dyn std::error::Erro
             let sig = registry::sign(&key, &data)?;
             println!("{sig}");
         }
-        RegistryCommand::List { registry, timeout_ms } => {
-            let index = registry::fetch_index(&registry, Duration::from_millis(timeout_ms))?;
+        RegistryCommand::List { registry, pubkey, timeout_ms } => {
+            let index = registry::fetch_index(&registry, &pubkey, Duration::from_millis(timeout_ms))?;
             if index.plugins.is_empty() {
                 println!("registry has no plugins");
             } else {
