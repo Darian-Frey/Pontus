@@ -181,8 +181,8 @@ Parse `.nmap` XML into the asset store as a migration bridge. **Acceptance:** an
 Git-hosted registry, browsable in-app, one-click install, signature verification. **Acceptance:** a signed plugin installs from the registry; an unsigned one is refused.
 
 ### F-027 Enrichment (ASN/geo/WHOIS/cloud)
-**Priority:** Could · **Status:** Not started
-Tag assets with ASN, geo, WHOIS and cloud-provider data. **Acceptance:** a public-IP asset is tagged with its ASN and cloud provider where applicable.
+**Priority:** Could · **Status:** In progress (ASN/owner/country/cloud done; WHOIS + city-geo next)
+Tag assets with ASN, geo, WHOIS and cloud-provider data. **Acceptance:** a public-IP asset is tagged with its ASN and cloud provider where applicable. ✅ The `enrich` core module looks up ASN, network owner and country from **Team Cymru's IP-to-ASN over DNS** (via the user's `dig`, D-006 — no vendored dataset, C-001) and infers the cloud provider clean-room from the ASN name (AWS/GCP/Azure/DigitalOcean/Oracle/Cloudflare/…). Only public IPv4 is enriched (private/reserved skipped; IPv6 a follow-up). Stored per-asset in an `enrichment` table. `pontus-cli enrich [--db]` tags the store's public-IP assets; `enrich --ip <IP>` is a one-off lookup. Live-verified: 1.1.1.1 → AS13335 Cloudflare [AU], 52.94.236.248 → AS16509 AWS [US], 8.8.8.8 → AS15169 Google Cloud [US]. **Remaining:** WHOIS, city-level geo (needs a GeoIP dataset), IPv6, and surfacing enrichment in the GUI.
 
 ### F-028 Windows support
 **Priority:** Should · **Status:** Not started

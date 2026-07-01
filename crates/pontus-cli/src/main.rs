@@ -75,6 +75,18 @@ enum Command {
         #[arg(long)]
         operator: Option<String>,
     },
+    /// Tag assets with ASN / network owner / country / cloud provider (F-027).
+    /// With --ip, look up a single address and print (no store).
+    Enrich {
+        #[arg(long, default_value = "pontus.db")]
+        db: String,
+        /// Look up one IP and print, instead of enriching the store's assets.
+        #[arg(long, value_name = "IP")]
+        ip: Option<String>,
+        /// Per-lookup DNS timeout, seconds.
+        #[arg(long, default_value_t = 3)]
+        timeout_s: u64,
+    },
     /// Export a scan as JSON, SARIF 2.1 or CSV (F-023).
     Export {
         #[arg(long, default_value = "pontus.db")]
@@ -347,6 +359,7 @@ async fn main() -> ExitCode {
         Command::Findings { db, scan } => run_findings(&db, scan),
         Command::Packages { db, scan } => run_packages(&db, scan),
         Command::ImportNmap { file, db, operator } => run_import_nmap(&file, &db, operator),
+        Command::Enrich { db, ip, timeout_s } => run_enrich(&db, ip, timeout_s),
         Command::Export { db, scan, format, output } => run_export(&db, scan, format, output),
         Command::Diff { db, from, to, all } => run_diff(&db, from, to, all),
         Command::Tls(args) => run_tls(args),
@@ -863,6 +876,58 @@ fn run_findings(db: &str, scan: Option<i64>) -> Result<(), Box<dyn std::error::E
         }
     }
     Ok(())
+}
+
+/// Tag assets (or a single IP) with ASN / owner / country / cloud (F-027).
+fn run_enrich(db: &str, ip: Option<String>, timeout_s: u64) -> Result<(), Box<dyn std::error::Error>> {
+    let timeout = Duration::from_secs(timeout_s.max(1));
+
+    // Single-IP mode: look up and print, no store.
+    if let Some(ip) = ip {
+        let addr: IpAddr = ip.parse().map_err(|_| format!("invalid IP: {ip}"))?;
+        let e = pontus_core::enrich::enrich_ip(addr, timeout)?;
+        println!("{ip}: {}", fmt_enrichment(&e));
+        return Ok(());
+    }
+
+    // Store mode: enrich every asset with a public IP.
+    let store = Store::open(db)?;
+    let mut enriched = 0u64;
+    for a in store.list_assets()? {
+        let Some(ip) = a.last_ip.as_deref().and_then(|s| s.parse::<IpAddr>().ok()) else {
+            continue;
+        };
+        let e = pontus_core::enrich::enrich_ip(ip, timeout)?;
+        if e.is_empty() {
+            continue; // private/reserved or nothing found
+        }
+        store.record_enrichment(a.id, &ip.to_string(), &e)?;
+        println!("  {:<39} {}", ip.to_string(), fmt_enrichment(&e));
+        enriched += 1;
+    }
+    println!("enriched {enriched} asset(s) with a public IP");
+    Ok(())
+}
+
+/// Human-readable one-line enrichment summary.
+fn fmt_enrichment(e: &pontus_core::enrich::Enrichment) -> String {
+    if e.is_empty() {
+        return "no enrichment (private/reserved or not found)".to_string();
+    }
+    let mut parts = Vec::new();
+    if let Some(asn) = e.asn {
+        parts.push(format!("AS{asn}"));
+    }
+    if let Some(name) = &e.asn_name {
+        parts.push(name.clone());
+    }
+    if let Some(c) = &e.country {
+        parts.push(format!("[{c}]"));
+    }
+    if let Some(cloud) = &e.cloud {
+        parts.push(format!("cloud: {cloud}"));
+    }
+    parts.join("  ")
 }
 
 /// Import an Nmap XML file as assets + observations (F-025).
